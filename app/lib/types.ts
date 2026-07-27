@@ -49,6 +49,7 @@ export type AppState = {
     displayName: string;
     handle: string;
     role: "admin" | "user";
+    preferredFormat: BattleFormat;
     preferredStyle: PlayStyle;
   };
   roster: RosterEntry[];
