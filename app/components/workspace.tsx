@@ -186,7 +186,11 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
         <div className="side-help"><span>?</span><div><strong>困ったときは</strong><small>用語ガイドを確認</small></div></div>
         <div className="profile-mini">
           <span>{state.user.displayName.slice(0, 1)}</span>
-          <div><strong>{state.user.displayName}</strong><small>@{state.user.handle}</small></div>
+          <div>
+            <strong>{state.user.displayName}</strong>
+            <small>@{state.user.handle}</small>
+            {state.user.role === "admin" && <em className="admin-badge">管理者</em>}
+          </div>
         </div>
       </aside>
 
@@ -196,6 +200,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
           <div><p>BEGINNER SUPPORT MODE</p><strong>{tabMeta.find((item) => item.id === tab)?.label}</strong></div>
           <div className="top-actions">
             {mode === "demo" && <a href="/signin-with-chatgpt?return_to=%2Fapp" className="small-primary">無料で保存する</a>}
+            {state.user.role === "admin" && <span className="admin-status" aria-label="管理者としてログイン中">管理者</span>}
             <span className="format-pill">{format === "single" ? "シングル" : "ダブル"}</span>
           </div>
         </header>
@@ -316,7 +321,7 @@ function SettingsPanel({ state, style, setStyle, mode, onSave, onDelete }: { sta
   const [name, setName] = useState(state.user.displayName);
   const [confirmDelete, setConfirmDelete] = useState(false);
   return <section><PageTitle eyebrow="ACCOUNT" title="アカウント設定" copy="表示名と、標準で使う戦い方を変更できる。" />
-    <div className="settings-grid"><section className="panel settings-card"><h2>プロフィール</h2><label>表示名<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={`@${state.user.handle}`} disabled /></label><label>メールアドレス<input value={state.user.email} disabled /></label><button className="form-primary" onClick={() => onSave({ displayName: name, preferredStyle: style })}>変更を保存</button></section>
+    <div className="settings-grid"><section className="panel settings-card"><div className="settings-heading"><h2>プロフィール</h2><span className={`role-status ${state.user.role}`}>{state.user.role === "admin" ? "管理者アカウント" : "一般アカウント"}</span></div><label>表示名<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={`@${state.user.handle}`} disabled /></label><label>メールアドレス<input value={state.user.email} disabled /></label><button className="form-primary" onClick={() => onSave({ displayName: name, preferredStyle: style })}>変更を保存</button></section>
       <section className="panel settings-card"><h2>好みの戦い方</h2><p>構築提案で最初に表示する方針。</p><div className="setting-style-list">{(Object.keys(styleInfo) as PlayStyle[]).map((key) => <button key={key} className={style === key ? "selected" : ""} onClick={() => setStyle(key)}><span>{style === key ? "✓" : ""}</span><strong>{styleInfo[key].name}</strong><small>{styleInfo[key].copy}</small></button>)}</div></section>
       <section className="panel danger-zone"><h2>ログアウト・削除</h2><p>ログアウトしても登録データは残る。アカウント削除は手持ちと持ち物を含む全データを削除する。</p>{mode === "live" ? <><a href="/signout-with-chatgpt?return_to=%2F">ログアウト</a>{confirmDelete ? <button className="danger-button" onClick={onDelete}>本当に削除する</button> : <button className="danger-link" onClick={() => setConfirmDelete(true)}>アカウントを削除</button>}</> : <Link href="/">体験版を終了</Link>}</section>
     </div>
