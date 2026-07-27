@@ -15,6 +15,13 @@
       "when": 1785141664667,
       "tag": "0001_magenta_vivisector",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785142555919,
+      "tag": "0002_graceful_mentor",
+      "breakpoints": true
     }
   ]
 }
