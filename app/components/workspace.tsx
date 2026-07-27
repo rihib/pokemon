@@ -232,7 +232,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
 
   const isAdmin = state.user.role === "admin";
   const visibleRole: "admin" | "user" = isAdmin && !previewAsUser ? "admin" : "user";
-  const nav = tabMeta.filter((item) => item.id !== "admin" || visibleRole === "admin");
+  const nav = tabMeta.filter((item) => item.id !== "settings" && (item.id !== "admin" || visibleRole === "admin"));
   const toggleRolePreview = () => {
     const next = !previewAsUser;
     setPreviewAsUser(next);
@@ -252,14 +252,20 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
           ))}
         </nav>
         <div className="side-help"><span>?</span><div><strong>困ったときは</strong><small>用語ガイドを確認</small></div></div>
-        <div className="profile-mini">
+        <button
+          type="button"
+          className={`profile-mini ${tab === "settings" ? "active" : ""}`}
+          onClick={() => { setTab("settings"); setMobileNav(false); }}
+          aria-label="アカウント設定を開く"
+          aria-current={tab === "settings" ? "page" : undefined}
+        >
           <span>{state.user.displayName.slice(0, 1)}</span>
           <div>
             <strong>{state.user.displayName}</strong>
             <small>@{state.user.handle}</small>
             {visibleRole === "admin" && <em className="admin-badge">管理者</em>}
           </div>
-        </div>
+        </button>
       </aside>
 
       <section className="app-main">
