@@ -1,10 +1,10 @@
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { masterData, ownedItems, roster, users } from "../../../db/schema";
+import { authIdentities, masterData, ownedItems, roster, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { demoMaster } from "../../lib/demo-data";
 
-const ADMIN_EMAIL = "rihib@rihib.dev";
+const ADMIN_USER_ID = 1;
 
 function safeJson<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
@@ -17,40 +17,40 @@ function handleFrom(email: string, displayName: string) {
   return candidate || `trainer-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function roleForEmail(email: string): "admin" | "user" {
-  return email.trim().toLowerCase() === ADMIN_EMAIL ? "admin" : "user";
+function roleForUserId(userId: number): "admin" | "user" {
+  return userId === ADMIN_USER_ID ? "admin" : "user";
+}
+
+function publicProfile<T extends typeof users.$inferSelect>(profile: T) {
+  return { ...profile, role: roleForUserId(profile.id) };
 }
 
 async function requireIdentity() {
   const identity = await getChatGPTUser();
   if (!identity) return null;
   const db = await getDb();
-  const existing = await db.select().from(users).where(eq(users.email, identity.email)).limit(1);
-  if (existing[0]) {
-    const expectedRole = roleForEmail(identity.email);
-    if (existing[0].role !== expectedRole) {
-      const [profile] = await db
-        .update(users)
-        .set({ role: expectedRole })
-        .where(eq(users.email, identity.email))
-        .returning();
-      return { identity, profile };
-    }
-    return { identity, profile: existing[0] };
+  const providerEmail = identity.email.trim().toLowerCase();
+  const linked = await db
+    .select({ profile: users })
+    .from(authIdentities)
+    .innerJoin(users, eq(authIdentities.userId, users.id))
+    .where(and(eq(authIdentities.provider, "chatgpt"), eq(authIdentities.providerEmail, providerEmail)))
+    .limit(1);
+  if (linked[0]) {
+    return { identity, profile: publicProfile(linked[0].profile) };
   }
 
-  const role = roleForEmail(identity.email);
-  const baseHandle = handleFrom(identity.email, identity.displayName);
+  const baseHandle = handleFrom(providerEmail, identity.displayName);
   let handle = baseHandle;
-  const collision = await db.select({ email: users.email }).from(users).where(eq(users.handle, handle)).limit(1);
+  const collision = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle)).limit(1);
   if (collision[0]) handle = `${baseHandle}-${Math.random().toString(36).slice(2, 6)}`;
   const [profile] = await db.insert(users).values({
-    email: identity.email,
+    email: providerEmail,
     displayName: identity.displayName,
     handle,
-    role,
   }).returning();
-  return { identity, profile };
+  await db.insert(authIdentities).values({ provider: "chatgpt", providerEmail, userId: profile.id });
+  return { identity, profile: publicProfile(profile) };
 }
 
 async function seedMasterIfEmpty() {
@@ -73,8 +73,8 @@ export async function GET() {
     await seedMasterIfEmpty();
     const db = await getDb();
     const [rosterRows, itemRows, masterRows] = await Promise.all([
-      db.select().from(roster).where(eq(roster.ownerEmail, auth.identity.email)).orderBy(asc(roster.id)),
-      db.select().from(ownedItems).where(eq(ownedItems.ownerEmail, auth.identity.email)).orderBy(asc(ownedItems.id)),
+      db.select().from(roster).where(eq(roster.ownerId, auth.profile.id)).orderBy(asc(roster.id)),
+      db.select().from(ownedItems).where(eq(ownedItems.ownerId, auth.profile.id)).orderBy(asc(ownedItems.id)),
       db.select().from(masterData).orderBy(asc(masterData.category), asc(masterData.name)),
     ]);
     return Response.json({
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
 
     if (action === "save-roster") {
       const values = {
-        ownerEmail: auth.identity.email,
+        ownerId: auth.profile.id,
         species: String(payload.species ?? "").trim(),
         nickname: String(payload.nickname ?? "").trim(),
         level: Math.max(1, Math.min(100, Number(payload.level) || 50)),
@@ -121,19 +121,19 @@ export async function POST(request: Request) {
       if (!values.species) return Response.json({ error: "ポケモン名は必須である" }, { status: 400 });
       const id = Number(payload.id);
       const [saved] = id
-        ? await db.update(roster).set(values).where(and(eq(roster.id, id), eq(roster.ownerEmail, auth.identity.email))).returning()
+        ? await db.update(roster).set(values).where(and(eq(roster.id, id), eq(roster.ownerId, auth.profile.id))).returning()
         : await db.insert(roster).values(values).returning();
       return Response.json({ saved });
     }
 
     if (action === "delete-roster") {
-      await db.delete(roster).where(and(eq(roster.id, Number(payload.id)), eq(roster.ownerEmail, auth.identity.email)));
+      await db.delete(roster).where(and(eq(roster.id, Number(payload.id)), eq(roster.ownerId, auth.profile.id)));
       return Response.json({ ok: true });
     }
 
     if (action === "save-item") {
       const values = {
-        ownerEmail: auth.identity.email,
+        ownerId: auth.profile.id,
         name: String(payload.name ?? "").trim(),
         quantity: Math.max(0, Number(payload.quantity) || 0),
         notes: String(payload.notes ?? "").trim(),
@@ -142,31 +142,55 @@ export async function POST(request: Request) {
       if (!values.name) return Response.json({ error: "持ち物名は必須である" }, { status: 400 });
       const id = Number(payload.id);
       const [saved] = id
-        ? await db.update(ownedItems).set(values).where(and(eq(ownedItems.id, id), eq(ownedItems.ownerEmail, auth.identity.email))).returning()
+        ? await db.update(ownedItems).set(values).where(and(eq(ownedItems.id, id), eq(ownedItems.ownerId, auth.profile.id))).returning()
         : await db.insert(ownedItems).values(values).returning();
       return Response.json({ saved });
     }
 
     if (action === "delete-item") {
-      await db.delete(ownedItems).where(and(eq(ownedItems.id, Number(payload.id)), eq(ownedItems.ownerEmail, auth.identity.email)));
+      await db.delete(ownedItems).where(and(eq(ownedItems.id, Number(payload.id)), eq(ownedItems.ownerId, auth.profile.id)));
       return Response.json({ ok: true });
     }
 
     if (action === "save-profile") {
+      const displayName = String(payload.displayName ?? auth.profile.displayName).trim();
+      const handle = String(payload.handle ?? auth.profile.handle).trim().replace(/^@/, "").toLowerCase();
+      const email = String(payload.email ?? auth.profile.email).trim().toLowerCase();
+      if (!displayName || displayName.length > 40) {
+        return Response.json({ error: "表示名は1〜40文字で入力する必要がある" }, { status: 400 });
+      }
+      if (!/^[a-z0-9_-]{3,24}$/.test(handle)) {
+        return Response.json({ error: "ユーザー名は英小文字・数字・_・-を使い、3〜24文字で入力する必要がある" }, { status: 400 });
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+        return Response.json({ error: "有効なメールアドレスを入力する必要がある" }, { status: 400 });
+      }
+      const [emailOwner, handleOwner] = await Promise.all([
+        db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1),
+        db.select({ id: users.id }).from(users).where(eq(users.handle, handle)).limit(1),
+      ]);
+      if (emailOwner[0] && emailOwner[0].id !== auth.profile.id) {
+        return Response.json({ error: "このメールアドレスは既に使用されている" }, { status: 409 });
+      }
+      if (handleOwner[0] && handleOwner[0].id !== auth.profile.id) {
+        return Response.json({ error: "このユーザー名は既に使用されている" }, { status: 409 });
+      }
       const preferredFormat = ["single", "double"].includes(String(payload.preferredFormat))
         ? String(payload.preferredFormat) as "single" | "double" : auth.profile.preferredFormat;
       const preferredStyle = ["balance", "attack", "control", "endurance"].includes(String(payload.preferredStyle))
         ? String(payload.preferredStyle) : auth.profile.preferredStyle;
       const [saved] = await db.update(users).set({
-        displayName: String(payload.displayName ?? auth.profile.displayName).trim(),
+        displayName,
+        handle,
+        email,
         preferredFormat,
         preferredStyle,
-      }).where(eq(users.email, auth.identity.email)).returning();
-      return Response.json({ saved });
+      }).where(eq(users.id, auth.profile.id)).returning();
+      return Response.json({ saved: publicProfile(saved) });
     }
 
     if (action === "delete-account") {
-      await db.delete(users).where(eq(users.email, auth.identity.email));
+      await db.delete(users).where(eq(users.id, auth.profile.id));
       return Response.json({ ok: true, signOut: "/signout-with-chatgpt?return_to=%2F" });
     }
 
