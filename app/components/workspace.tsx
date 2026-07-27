@@ -400,7 +400,7 @@ function RosterPanel({ roster, onEdit, onDelete }: { roster: RosterEntry[]; onEd
 
 function ItemsPanel({ items, onEdit, onDelete }: { items: OwnedItem[]; onEdit: (i: OwnedItem) => void; onDelete: (id: number) => void }) {
   return <section><PageTitle eyebrow="OWNED ITEMS" title="持ち物リスト" copy="利用できる持ち物と個数を登録すると、重複を避けて構築を提案する。" count={`${items.reduce((s, i) => s + i.quantity, 0)}個`} />
-    <div className="item-table">{items.map((item) => <article key={item.id}><span className="item-icon">▣</span><div><strong>{item.name}</strong><small>{item.notes || "メモなし"}</small></div><b>× {item.quantity}</b><button onClick={() => onEdit(item)}>編集</button><button className="danger-link" onClick={() => onDelete(item.id)}>削除</button></article>)}</div>
+    {!!items.length && <div className="item-table">{items.map((item) => <article key={item.id}><span className="item-icon">▣</span><div><strong>{item.name}</strong><small>{item.notes || "メモなし"}</small></div><b>× {item.quantity}</b><button onClick={() => onEdit(item)}>編集</button><button className="danger-link" onClick={() => onDelete(item.id)}>削除</button></article>)}</div>}
     {!items.length && <EmptyState title="持ち物が登録されていない" copy="持っている数を登録すると、同じ持ち物の使いすぎを防げる。" />}</section>;
 }
 
