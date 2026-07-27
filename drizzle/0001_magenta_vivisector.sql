@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `preferred_format` text DEFAULT 'single' NOT NULL;
