@@ -7,6 +7,7 @@ export type MasterCategoryPage = {
   eyebrow: string;
   description: string;
   typeLabel: string;
+  group: "battle" | "rules";
 };
 
 export const masterCategoryPages: MasterCategoryPage[] = [
@@ -17,6 +18,7 @@ export const masterCategoryPages: MasterCategoryPage[] = [
     eyebrow: "POKÉMON MASTER",
     description: "使用できるポケモンと、そのポケモンに紐づくタイプを管理する。",
     typeLabel: "タイプ",
+    group: "battle",
   },
   {
     category: "item",
@@ -25,6 +27,7 @@ export const masterCategoryPages: MasterCategoryPage[] = [
     eyebrow: "ITEM MASTER",
     description: "ポケモンに持たせられる持ち物と、初心者向けの効果説明を管理する。",
     typeLabel: "分類",
+    group: "battle",
   },
   {
     category: "ability",
@@ -33,6 +36,7 @@ export const masterCategoryPages: MasterCategoryPage[] = [
     eyebrow: "ABILITY MASTER",
     description: "ポケモンが選択できる特性と、バトル中の効果説明を管理する。",
     typeLabel: "分類",
+    group: "battle",
   },
   {
     category: "move",
@@ -41,6 +45,7 @@ export const masterCategoryPages: MasterCategoryPage[] = [
     eyebrow: "MOVE MASTER",
     description: "ポケモンが選択できる技と、タイプ・効果の概要を管理する。",
     typeLabel: "タイプ・分類",
+    group: "battle",
   },
   {
     category: "nature",
@@ -49,6 +54,34 @@ export const masterCategoryPages: MasterCategoryPage[] = [
     eyebrow: "NATURE MASTER",
     description: "選択できる性格と、ステータス補正の説明を管理する。",
     typeLabel: "補正・分類",
+    group: "battle",
+  },
+  {
+    category: "type",
+    slug: "types",
+    name: "タイプ相性",
+    eyebrow: "TYPE CHART",
+    description: "攻撃側と防御側のタイプ相性倍率を管理する。",
+    typeLabel: "識別情報",
+    group: "rules",
+  },
+  {
+    category: "form",
+    slug: "forms",
+    name: "フォルム・Mega",
+    eyebrow: "FORM & MEGA MASTER",
+    description: "通常フォルムとの関係、タイプ、Mega Evolutionの可否を管理する。",
+    typeLabel: "タイプ",
+    group: "rules",
+  },
+  {
+    category: "regulation",
+    slug: "regulations",
+    name: "Regulation",
+    eyebrow: "REGULATION MASTER",
+    description: "期間、選出数、使用できるポケモン・持ち物・フォルムを管理する。",
+    typeLabel: "適用期間",
+    group: "rules",
   },
 ];
 
