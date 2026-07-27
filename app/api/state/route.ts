@@ -153,10 +153,13 @@ export async function POST(request: Request) {
     }
 
     if (action === "save-profile") {
+      const preferredFormat = ["single", "double"].includes(String(payload.preferredFormat))
+        ? String(payload.preferredFormat) as "single" | "double" : auth.profile.preferredFormat;
       const preferredStyle = ["balance", "attack", "control", "endurance"].includes(String(payload.preferredStyle))
-        ? String(payload.preferredStyle) : "balance";
+        ? String(payload.preferredStyle) : auth.profile.preferredStyle;
       const [saved] = await db.update(users).set({
         displayName: String(payload.displayName ?? auth.profile.displayName).trim(),
+        preferredFormat,
         preferredStyle,
       }).where(eq(users.email, auth.identity.email)).returning();
       return Response.json({ saved });
