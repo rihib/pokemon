@@ -1,7 +1,8 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { masterData, ownedItems, roster, users } from "../../../db/schema";
-import { demoMaster } from "../../lib/demo-data";
+import { masterData, masterRelations, ownedItems, roster, users } from "../../../db/schema";
+import { demoMaster, demoMasterRelations } from "../../lib/demo-data";
+import type { MasterCategory, MasterRelationKind } from "../../lib/types";
 import { publicProfile, requireAppIdentity } from "../../lib/server-identity";
 
 function safeJson<T>(value: string, fallback: T): T {
@@ -17,6 +18,27 @@ async function seedBaselineMaster() {
     description: entry.description,
     data: JSON.stringify(entry.data ?? {}),
   }))).onConflictDoNothing();
+
+  const persisted = await db.select().from(masterData);
+  const demoById = new Map(demoMaster.map((entry) => [entry.id, entry]));
+  const persistedByKey = new Map(persisted.map((entry) => [`${entry.category}:${entry.name}`, entry]));
+  const relationValues = demoMasterRelations.flatMap((relation) => {
+    const demoSource = demoById.get(relation.sourceId);
+    const demoTarget = demoById.get(relation.targetId);
+    if (!demoSource || !demoTarget) return [];
+    const source = persistedByKey.get(`${demoSource.category}:${demoSource.name}`);
+    const target = persistedByKey.get(`${demoTarget.category}:${demoTarget.name}`);
+    if (!source || !target) return [];
+    return [{
+      sourceId: source.id,
+      targetId: target.id,
+      kind: relation.kind,
+      data: JSON.stringify(relation.data ?? {}),
+    }];
+  });
+  if (relationValues.length) {
+    await db.insert(masterRelations).values(relationValues).onConflictDoNothing();
+  }
 }
 
 export async function GET() {
@@ -25,10 +47,11 @@ export async function GET() {
     if (!auth) return Response.json({ error: "ログインが必要である" }, { status: 401 });
     await seedBaselineMaster();
     const db = await getDb();
-    const [rosterRows, itemRows, masterRows] = await Promise.all([
+    const [rosterRows, itemRows, masterRows, relationRows] = await Promise.all([
       db.select().from(roster).where(eq(roster.ownerId, auth.profile.id)).orderBy(asc(roster.id)),
       db.select().from(ownedItems).where(eq(ownedItems.ownerId, auth.profile.id)).orderBy(asc(ownedItems.id)),
       db.select().from(masterData).orderBy(asc(masterData.category), asc(masterData.name)),
+      db.select().from(masterRelations).orderBy(asc(masterRelations.sourceId), asc(masterRelations.kind)),
     ]);
     return Response.json({
       user: auth.profile,
@@ -39,6 +62,7 @@ export async function GET() {
       })),
       items: itemRows,
       master: masterRows.map((row) => ({ ...row, data: safeJson(row.data, {}) })),
+      masterRelations: relationRows.map((row) => ({ ...row, data: safeJson(row.data, {}) })),
     });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "データを読み込めなかった" }, { status: 500 });
@@ -56,19 +80,47 @@ export async function POST(request: Request) {
 
     if (action === "save-roster") {
       const availableMaster = await db.select({
+        id: masterData.id,
         category: masterData.category,
         name: masterData.name,
         type: masterData.type,
+        data: masterData.data,
       }).from(masterData);
+      const availableRelations = await db.select().from(masterRelations);
       const species = String(payload.species ?? "").trim();
       const speciesMaster = availableMaster.find((entry) => entry.category === "pokemon" && entry.name === species);
       const ability = String(payload.ability ?? "").trim();
       const heldItem = String(payload.heldItem ?? "").trim();
       const nature = String(payload.nature ?? "").trim();
+      const form = String(payload.form ?? "").trim();
       const moves = Array.isArray(payload.moves) ? payload.moves.map(String).map((move) => move.trim()).filter(Boolean).slice(0, 4) : [];
       const existsInMaster = (category: "item" | "ability" | "move" | "nature", name: string) =>
         !name || availableMaster.some((entry) => entry.category === category && entry.name === name);
       if (!speciesMaster) return Response.json({ error: "マスターデータに登録されたポケモンを選択する必要がある" }, { status: 400 });
+      const linkedAbilityIds = availableRelations
+        .filter((relation) => relation.sourceId === speciesMaster.id && relation.kind === "has_ability")
+        .map((relation) => relation.targetId);
+      const linkedMoveIds = availableRelations
+        .filter((relation) => relation.sourceId === speciesMaster.id && relation.kind === "learns_move")
+        .map((relation) => relation.targetId);
+      const abilityMaster = availableMaster.find((entry) => entry.category === "ability" && entry.name === ability);
+      const moveMasters = moves.map((name) => availableMaster.find((entry) => entry.category === "move" && entry.name === name));
+      if (ability && linkedAbilityIds.length && (!abilityMaster || !linkedAbilityIds.includes(abilityMaster.id))) {
+        return Response.json({ error: "このポケモンが使用できる特性を選択する必要がある" }, { status: 400 });
+      }
+      if (linkedMoveIds.length && moveMasters.some((move) => !move || !linkedMoveIds.includes(move.id))) {
+        return Response.json({ error: "このポケモンが使用できる技を選択する必要がある" }, { status: 400 });
+      }
+      const formMaster = form
+        ? availableMaster.find((entry) => entry.category === "form" && entry.name === form)
+        : undefined;
+      if (form && (!formMaster || !availableRelations.some((relation) =>
+        relation.sourceId === formMaster.id &&
+        relation.targetId === speciesMaster.id &&
+        relation.kind === "form_of"
+      ))) {
+        return Response.json({ error: "このポケモンに対応するフォルムを選択する必要がある" }, { status: 400 });
+      }
       if (!existsInMaster("ability", ability)) return Response.json({ error: "マスターデータに登録された特性を選択する必要がある" }, { status: 400 });
       if (!existsInMaster("item", heldItem)) return Response.json({ error: "マスターデータに登録された持ち物を選択する必要がある" }, { status: 400 });
       if (!existsInMaster("nature", nature)) return Response.json({ error: "マスターデータに登録された性格を選択する必要がある" }, { status: 400 });
@@ -78,11 +130,14 @@ export async function POST(request: Request) {
         ownerId: auth.profile.id,
         species,
         nickname: String(payload.nickname ?? "").trim(),
-        types: speciesMaster.type,
+        types: formMaster?.type || speciesMaster.type,
         ability,
         heldItem,
         nature,
-        megaEvolution: Boolean(payload.megaEvolution),
+        form,
+        megaEvolution: formMaster
+          ? Boolean(safeJson<Record<string, unknown>>(formMaster.data, {}).mega)
+          : Boolean(payload.megaEvolution),
         moves: JSON.stringify(moves),
         stats: JSON.stringify(payload.stats ?? {}),
         notes: String(payload.notes ?? "").trim(),
@@ -171,11 +226,12 @@ export async function POST(request: Request) {
         return Response.json({ ok: true });
       }
       const category = String(payload.category);
-      if (!["pokemon", "item", "ability", "move", "nature"].includes(category)) {
+      const categories: MasterCategory[] = ["pokemon", "item", "ability", "move", "nature", "type", "form", "regulation"];
+      if (!categories.includes(category as MasterCategory)) {
         return Response.json({ error: "カテゴリが不正である" }, { status: 400 });
       }
       const values = {
-        category: category as "pokemon" | "item" | "ability" | "move" | "nature",
+        category: category as MasterCategory,
         name: String(payload.name ?? "").trim(),
         type: String(payload.type ?? "").trim(),
         description: String(payload.description ?? "").trim(),
@@ -187,6 +243,73 @@ export async function POST(request: Request) {
       const [saved] = id
         ? await db.update(masterData).set(values).where(eq(masterData.id, id)).returning()
         : await db.insert(masterData).values(values).returning();
+
+      if (saved.category === "regulation" && Boolean((payload.data as Record<string, unknown> | undefined)?.active)) {
+        const otherRegulations = await db
+          .select()
+          .from(masterData)
+          .where(eq(masterData.category, "regulation"));
+        await Promise.all(otherRegulations
+          .filter((entry) => entry.id !== saved.id)
+          .map((entry) => db.update(masterData).set({
+            data: JSON.stringify({ ...safeJson<Record<string, unknown>>(entry.data, {}), active: false }),
+            updatedAt: new Date().toISOString(),
+          }).where(eq(masterData.id, entry.id))));
+      }
+
+      if (Array.isArray(payload.relations)) {
+        const relationKinds: MasterRelationKind[] = [
+          "learns_move",
+          "has_ability",
+          "form_of",
+          "type_effectiveness",
+          "allows_pokemon",
+          "allows_item",
+          "allows_form",
+        ];
+        const requestedRelations = payload.relations
+          .map((value) => value as Record<string, unknown>)
+          .filter((value) =>
+            relationKinds.includes(String(value.kind) as MasterRelationKind) &&
+            Number.isInteger(Number(value.targetId)) &&
+            Number(value.targetId) > 0
+          );
+        if (requestedRelations.length) {
+          const targetIds = requestedRelations.map((relation) => Number(relation.targetId));
+          const validTargets = await db
+            .select({ id: masterData.id, category: masterData.category })
+            .from(masterData)
+            .where(inArray(masterData.id, targetIds));
+          const validTargetsById = new Map(validTargets.map((target) => [target.id, target.category]));
+          const expectedRelation: Partial<Record<MasterRelationKind, [MasterCategory, MasterCategory]>> = {
+            learns_move: ["pokemon", "move"],
+            has_ability: ["pokemon", "ability"],
+            form_of: ["form", "pokemon"],
+            type_effectiveness: ["type", "type"],
+            allows_pokemon: ["regulation", "pokemon"],
+            allows_item: ["regulation", "item"],
+            allows_form: ["regulation", "form"],
+          };
+          const insertValues = requestedRelations
+            .filter((relation) => {
+              const expected = expectedRelation[String(relation.kind) as MasterRelationKind];
+              return expected?.[0] === saved.category &&
+                expected[1] === validTargetsById.get(Number(relation.targetId));
+            })
+            .map((relation) => ({
+              sourceId: saved.id,
+              targetId: Number(relation.targetId),
+              kind: String(relation.kind) as MasterRelationKind,
+              data: JSON.stringify(relation.data ?? {}),
+            }));
+          await db.delete(masterRelations).where(eq(masterRelations.sourceId, saved.id));
+          if (insertValues.length) {
+            await db.insert(masterRelations).values(insertValues).onConflictDoNothing();
+          }
+        } else {
+          await db.delete(masterRelations).where(eq(masterRelations.sourceId, saved.id));
+        }
+      }
       return Response.json({ saved });
     }
 
