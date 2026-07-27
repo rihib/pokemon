@@ -161,6 +161,15 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
     return () => { active = false; };
   }, [mode]);
 
+  useEffect(() => {
+    if (!mobileNav) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileNav(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileNav]);
+
   const mutate = async (action: string, payload: Record<string, unknown>, optimistic?: () => void) => {
     setError("");
     if (mode === "demo") {
@@ -242,7 +251,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
 
   return (
     <main className="app-shell">
-      <aside className={`side-nav ${mobileNav ? "open" : ""}`}>
+      <aside id="workspace-navigation" className={`side-nav ${mobileNav ? "open" : ""}`}>
         <Link className="brand app-brand" href="/"><span className="brand-mark">CL</span><span>CHAMPIONS<br />LAB</span></Link>
         <nav aria-label="アプリメニュー">
           {nav.map((item) => (
@@ -267,10 +276,11 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
           </div>
         </button>
       </aside>
+      {mobileNav && <button type="button" className="mobile-nav-backdrop" onClick={() => setMobileNav(false)} aria-label="メニューを閉じる" />}
 
       <section className="app-main">
         <header className="app-top">
-          <button className="menu-button" onClick={() => setMobileNav((v) => !v)} aria-label="メニューを開く">☰</button>
+          <button className="menu-button" onClick={() => setMobileNav((v) => !v)} aria-label={mobileNav ? "メニューを閉じる" : "メニューを開く"} aria-expanded={mobileNav} aria-controls="workspace-navigation">☰</button>
           <div><p>BEGINNER SUPPORT MODE</p><strong>{tabMeta.find((item) => item.id === tab)?.label}</strong></div>
           <div className="top-actions">
             {mode === "demo" && <a href="/signin-with-chatgpt?return_to=%2Fapp" className="small-primary">無料で保存する</a>}
