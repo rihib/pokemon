@@ -235,6 +235,10 @@ footer small { grid-column: 1 / -1; color: var(--ink-soft); font-size: 10px; }
 .profile-mini > span { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; color: var(--ink); background: var(--mint); border-radius: 50%; font-weight: 900; }
 .profile-mini strong, .profile-mini small { display: block; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-mini strong { font-size: 11px; }.profile-mini small { margin-top: 3px; color: #9ab4ac; font-size: 8px; }
+.admin-badge {
+  width: fit-content; display: block; margin-top: 6px; padding: 3px 7px; color: #fff3df; background: rgba(244,122,60,.22);
+  border: 1px solid rgba(255,189,145,.42); border-radius: 999px; font-size: 8px; font-style: normal; font-weight: 900; letter-spacing: .05em;
+}
 .app-main { min-width: 0; }
 .app-top {
   height: 72px; position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between;
@@ -243,6 +247,10 @@ footer small { grid-column: 1 / -1; color: var(--ink-soft); font-size: 10px; }
 .app-top > div:first-of-type p { margin: 0 0 3px; color: var(--orange-dark); font: 800 8px/1 monospace; letter-spacing: .12em; }
 .app-top > div:first-of-type strong { font-size: 14px; }
 .top-actions { display: flex; align-items: center; gap: 12px; }
+.admin-status {
+  padding: 7px 11px; color: #8a3514; background: #ffe5d2; border: 1px solid #f2b184;
+  border-radius: 999px; font-size: 10px; font-weight: 900;
+}
 .format-pill { padding: 7px 11px; color: var(--ink); background: var(--mint); border-radius: 999px; font-size: 10px; font-weight: 800; }
 .small-primary { padding: 9px 13px; color: white; background: var(--orange); border-radius: 8px; font-size: 10px; font-weight: 800; }
 .menu-button { display: none; }
@@ -343,6 +351,11 @@ footer small { grid-column: 1 / -1; color: var(--ink-soft); font-size: 10px; }
 .admin-tabs { display: flex; gap: 6px; margin-bottom: 16px; overflow-x: auto; }.admin-tabs button { min-width: 110px; padding: 11px; color: var(--ink); background: var(--mint-soft); border: 1px solid transparent; border-radius: 8px; font-size: 10px; font-weight: 800; cursor: pointer; }.admin-tabs button.active { color: white; background: var(--ink); }.admin-tabs span { margin-left: 6px; opacity: .6; }
 .master-table { border: 1px solid var(--line); border-radius: 13px; overflow: hidden; background: var(--white); }.master-head, .master-table article { display: grid; grid-template-columns: 1fr .8fr 2fr 100px; gap: 15px; align-items: center; padding: 12px 17px; }.master-head { color: var(--ink-soft); background: var(--mint-soft); font-size: 8px; font-weight: 800; }.master-table article { min-height: 61px; border-top: 1px solid #dde5df; }.master-table article strong { font-size: 11px; }.master-table article > span, .master-table article > p { margin: 0; color: var(--ink-soft); font-size: 8px; line-height: 1.6; }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }.settings-card, .danger-zone { padding: 22px; }.settings-card h2, .danger-zone h2 { margin: 0 0 18px; font-size: 16px; }.settings-card > p, .danger-zone p { color: var(--ink-soft); font-size: 9px; line-height: 1.7; }.settings-card > label { display: block; margin-bottom: 13px; font-size: 9px; font-weight: 800; }.settings-card input { width: 100%; margin-top: 6px; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: white; font-size: 10px; }.settings-card input:disabled { background: #eef1ec; color: #879690; }
+.settings-heading { min-height: 24px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.settings-heading h2 { margin: 0; }
+.role-status { padding: 5px 9px; border-radius: 999px; font-size: 8px; font-weight: 900; white-space: nowrap; }
+.role-status.admin { color: #8a3514; background: #ffe5d2; border: 1px solid #f2b184; }
+.role-status.user { color: var(--ink-soft); background: var(--mint); border: 1px solid var(--line); }
 .setting-style-list { display: grid; gap: 7px; }.setting-style-list button { display: grid; grid-template-columns: 23px 90px 1fr; align-items: center; gap: 8px; padding: 10px; text-align: left; color: var(--ink); background: var(--mint-soft); border: 1px solid transparent; border-radius: 8px; cursor: pointer; }.setting-style-list button.selected { border-color: var(--orange); background: #fff8ef; }.setting-style-list button > span { width: 21px; height: 21px; display: grid; place-items: center; color: white; background: var(--orange); border-radius: 50%; font-size: 8px; }.setting-style-list strong { font-size: 10px; }.setting-style-list small { color: var(--ink-soft); font-size: 8px; }
 .danger-zone { grid-column: 1 / -1; border-color: #dfb8b1; }.danger-zone a, .danger-zone button { display: inline-block; margin: 10px 10px 0 0; padding: 10px 14px; border-radius: 7px; font-size: 9px; font-weight: 800; }.danger-zone a { color: var(--ink); background: var(--mint); }.danger-button { color: white; background: #a94438; border: 0; cursor: pointer; }
 .empty-state { min-height: 320px; display: grid; place-content: center; justify-items: center; text-align: center; color: var(--ink-soft); background: var(--white); border: 1px dashed var(--line); border-radius: 13px; }.empty-state > span { width: 50px; height: 50px; display: grid; place-items: center; color: var(--ink); background: var(--mint); border-radius: 15px; font-size: 22px; }.empty-state h2 { margin: 16px 0 7px; color: var(--ink); font-size: 17px; }.empty-state p { max-width: 420px; margin: 0 0 16px; font-size: 10px; line-height: 1.8; }
