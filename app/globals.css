@@ -231,7 +231,9 @@ footer small { grid-column: 1 / -1; color: var(--ink-soft); font-size: 10px; }
 .side-help > span { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #88aa9f; border-radius: 50%; }
 .side-help strong, .side-help small { display: block; }
 .side-help strong { font-size: 10px; }.side-help small { color: #9ab4ac; font-size: 8px; margin-top: 3px; }
-.profile-mini { padding: 15px 7px 0; border-top: 1px solid rgba(255,255,255,.14); display: flex; align-items: center; gap: 10px; }
+.profile-mini { width: 100%; padding: 15px 7px 0; border: 0; border-top: 1px solid rgba(255,255,255,.14); display: flex; align-items: center; gap: 10px; color: inherit; background: transparent; text-align: left; cursor: pointer; transition: .16s ease; }
+.profile-mini:hover, .profile-mini:focus-visible { color: white; background: rgba(255,255,255,.06); outline: none; }
+.profile-mini.active { color: white; }
 .profile-mini > span { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; color: var(--ink); background: var(--mint); border-radius: 50%; font-weight: 900; }
 .profile-mini strong, .profile-mini small { display: block; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-mini strong { font-size: 11px; }.profile-mini small { margin-top: 3px; color: #9ab4ac; font-size: 8px; }
