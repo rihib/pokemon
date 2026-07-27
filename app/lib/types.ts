@@ -15,13 +15,11 @@ export type RosterEntry = {
   id: number;
   species: string;
   nickname: string;
-  level: number;
   types: string;
-  teraType: string;
   ability: string;
   heldItem: string;
   nature: string;
-  role: string;
+  megaEvolution: boolean;
   moves: string[];
   stats: Stats;
   notes: string;
