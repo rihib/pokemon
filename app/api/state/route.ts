@@ -152,6 +152,15 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
+    if (action === "check-handle") {
+      const handle = String(payload.handle ?? "").trim().replace(/^@/, "").toLowerCase();
+      if (!/^[a-z0-9_-]{3,24}$/.test(handle)) {
+        return Response.json({ available: false, reason: "format" });
+      }
+      const owner = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle)).limit(1);
+      return Response.json({ available: !owner[0] || owner[0].id === auth.profile.id });
+    }
+
     if (action === "save-profile") {
       const displayName = String(payload.displayName ?? auth.profile.displayName).trim();
       const handle = String(payload.handle ?? auth.profile.handle).trim().replace(/^@/, "").toLowerCase();
