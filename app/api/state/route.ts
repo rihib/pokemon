@@ -155,23 +155,13 @@ export async function POST(request: Request) {
     if (action === "save-profile") {
       const displayName = String(payload.displayName ?? auth.profile.displayName).trim();
       const handle = String(payload.handle ?? auth.profile.handle).trim().replace(/^@/, "").toLowerCase();
-      const email = String(payload.email ?? auth.profile.email).trim().toLowerCase();
       if (!displayName || displayName.length > 40) {
         return Response.json({ error: "表示名は1〜40文字で入力する必要がある" }, { status: 400 });
       }
       if (!/^[a-z0-9_-]{3,24}$/.test(handle)) {
         return Response.json({ error: "ユーザー名は英小文字・数字・_・-を使い、3〜24文字で入力する必要がある" }, { status: 400 });
       }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
-        return Response.json({ error: "有効なメールアドレスを入力する必要がある" }, { status: 400 });
-      }
-      const [emailOwner, handleOwner] = await Promise.all([
-        db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1),
-        db.select({ id: users.id }).from(users).where(eq(users.handle, handle)).limit(1),
-      ]);
-      if (emailOwner[0] && emailOwner[0].id !== auth.profile.id) {
-        return Response.json({ error: "このメールアドレスは既に使用されている" }, { status: 409 });
-      }
+      const handleOwner = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle)).limit(1);
       if (handleOwner[0] && handleOwner[0].id !== auth.profile.id) {
         return Response.json({ error: "このユーザー名は既に使用されている" }, { status: 409 });
       }
@@ -182,7 +172,6 @@ export async function POST(request: Request) {
       const [saved] = await db.update(users).set({
         displayName,
         handle,
-        email,
         preferredFormat,
         preferredStyle,
       }).where(eq(users.id, auth.profile.id)).returning();
