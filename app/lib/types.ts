@@ -45,6 +45,7 @@ export type MasterEntry = {
 
 export type AppState = {
   user: {
+    id: number;
     email: string;
     displayName: string;
     handle: string;
