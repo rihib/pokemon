@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { demoState } from "../lib/demo-data";
-import type { AppState, BattleFormat, MasterCategory, MasterEntry, OwnedItem, PlayStyle, RosterEntry, Stats } from "../lib/types";
+import type { AppState, BattleFormat, MasterEntry, OwnedItem, PlayStyle, RosterEntry, Stats } from "../lib/types";
 
-type Tab = "home" | "roster" | "items" | "build" | "battle" | "admin" | "settings";
+type Tab = "home" | "roster" | "items" | "build" | "battle" | "settings";
 
 const tabMeta: { id: Tab; label: string; icon: string }[] = [
   { id: "home", label: "ホーム", icon: "⌂" },
@@ -13,7 +13,6 @@ const tabMeta: { id: Tab; label: string; icon: string }[] = [
   { id: "items", label: "持ち物", icon: "▣" },
   { id: "build", label: "パーティー構築", icon: "◇" },
   { id: "battle", label: "対戦ナビ", icon: "◎" },
-  { id: "admin", label: "マスターデータ", icon: "⚙" },
   { id: "settings", label: "アカウント", icon: "○" },
 ];
 
@@ -43,8 +42,6 @@ const styleInfo: Record<PlayStyle, { name: string; copy: string; forWhom: string
 
 const emptyStats: Stats = { hp: 80, attack: 80, defense: 80, spAttack: 80, spDefense: 80, speed: 80 };
 const emptyRoster = (): RosterEntry => ({ id: 0, species: "", nickname: "", types: "", ability: "", heldItem: "", nature: "", megaEvolution: false, moves: ["", "", "", ""], stats: { ...emptyStats }, notes: "" });
-const categoryNames: Record<MasterCategory, string> = { pokemon: "ポケモン", item: "持ち物", ability: "特性", move: "技", nature: "性格" };
-
 function numberScore(mon: RosterEntry, style: PlayStyle) {
   const s = mon.stats;
   const offense = Math.max(s.attack, s.spAttack);
@@ -115,13 +112,11 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
   const [mobileNav, setMobileNav] = useState(false);
   const [rosterEditor, setRosterEditor] = useState<RosterEntry | null>(null);
   const [itemEditor, setItemEditor] = useState<OwnedItem | null>(null);
-  const [masterEditor, setMasterEditor] = useState<MasterEntry | null>(null);
   const [format, setFormat] = useState<BattleFormat>(demoState.user.preferredFormat);
   const [style, setStyle] = useState<PlayStyle>(demoState.user.preferredStyle);
   const [opponents, setOpponents] = useState(["カイリュー", "サーフゴー", "ウーラオス", "ハバタクカミ", "ゴリランダー", "ガオガエン"]);
   const [enemyLead, setEnemyLead] = useState("カイリュー");
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
-  const [category, setCategory] = useState<MasterCategory>("pokemon");
   const [previewAsUser, setPreviewAsUser] = useState(false);
   const [savingPreferences, setSavingPreferences] = useState(false);
 
@@ -240,12 +235,10 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
 
   const isAdmin = state.user.role === "admin";
   const visibleRole: "admin" | "user" = isAdmin && !previewAsUser ? "admin" : "user";
-  const nav = tabMeta.filter((item) => item.id !== "settings" && (item.id !== "admin" || visibleRole === "admin"));
+  const nav = tabMeta.filter((item) => item.id !== "settings");
   const toggleRolePreview = () => {
     const next = !previewAsUser;
     setPreviewAsUser(next);
-    if (next && tab === "admin") setTab("home");
-    if (next) setMasterEditor(null);
   };
 
   return (
@@ -258,6 +251,13 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
               <span>{item.icon}</span>{item.label}
             </button>
           ))}
+          {visibleRole === "admin" && (
+            <Link className="admin-nav-link" href="/admin" onClick={() => setMobileNav(false)}>
+              <span>⚙</span>
+              <span>マスターデータ管理</span>
+              <small>↗</small>
+            </Link>
+          )}
         </nav>
         <div className="side-help"><span>?</span><div><strong>困ったときは</strong><small>用語ガイドを確認</small></div></div>
         <button
@@ -344,7 +344,6 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
             {tab === "items" && <ItemsPanel items={state.items} onEdit={setItemEditor} onDelete={(id) => void mutate("delete-item", { id }, () => setState((s) => ({ ...s, items: s.items.filter((i) => i.id !== id) })))} />}
             {tab === "build" && <BuildPanel roster={state.roster} format={format} style={style} suggestions={suggestions} selected={selectedSuggestion} setSelected={setSelectedSuggestion} onRoster={() => setTab("roster")} />}
             {tab === "battle" && <BattlePanel format={format} style={style} opponents={opponents} setOpponents={setOpponents} selection={selection} enemyLead={enemyLead} setEnemyLead={setEnemyLead} lead={lead} onRoster={() => setTab("roster")} />}
-            {tab === "admin" && visibleRole === "admin" && <AdminPanel entries={state.master} category={category} setCategory={setCategory} onEdit={setMasterEditor} onDelete={(id) => void mutate("delete-master", { id }, () => setState((s) => ({ ...s, master: s.master.filter((m) => m.id !== id) })))} />}
             {tab === "settings" && <SettingsPanel state={state} visibleRole={visibleRole} format={format} style={style} mode={mode} onSave={(payload) => void mutate("save-profile", payload, () => setState((s) => ({ ...s, user: { ...s.user, ...payload } })))} onDelete={() => void mutate("delete-account", {}, () => { window.location.href = "/"; })} />}
           </div>
         )}
@@ -358,14 +357,8 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
         const ok = await mutate("save-item", value as unknown as Record<string, unknown>, () => setState((s) => ({ ...s, items: value.id ? s.items.map((i) => i.id === value.id ? value : i) : [...s.items, { ...value, id: Math.max(0, ...s.items.map((i) => i.id)) + 1 }] })));
         if (ok) setItemEditor(null);
       }} />}
-      {masterEditor && <MasterModal value={masterEditor} onClose={() => setMasterEditor(null)} onSave={async (value) => {
-        const ok = await mutate("save-master", value as unknown as Record<string, unknown>, () => setState((s) => ({ ...s, master: value.id ? s.master.map((m) => m.id === value.id ? value : m) : [...s.master, { ...value, id: Math.max(0, ...s.master.map((m) => m.id)) + 1 }] })));
-        if (ok) setMasterEditor(null);
-      }} />}
-
       {tab === "roster" && <button className="floating-add" onClick={() => setRosterEditor(emptyRoster())}>＋ ポケモンを登録</button>}
       {tab === "items" && <button className="floating-add" onClick={() => setItemEditor({ id: 0, name: "", quantity: 1, notes: "" })}>＋ 持ち物を登録</button>}
-      {tab === "admin" && visibleRole === "admin" && <button className="floating-add" onClick={() => setMasterEditor({ id: 0, category, name: "", type: "", description: "" })}>＋ データを追加</button>}
     </main>
   );
 }
@@ -448,14 +441,6 @@ function BattlePanel({ format, style, opponents, setOpponents, selection, enemyL
       <section className="panel selection-panel"><div className="panel-head"><div><small>RECOMMENDED PICK</small><h2>この3体がおすすめ</h2></div><span className="score-ring small">{Math.min(99, 78 + selection[0].advantages.length * 4)}</span></div>{selection.map((picked, i) => <div className={`selection-row ${i === 0 ? "best" : ""}`} key={picked.mon.id}><span className={`rank rank-${i + 1}`}>{i + 1}</span><MonsterTile mon={picked.mon} index={i} compact /><p>{picked.advantages.length ? picked.advantages.join("・") : "総合力と役割の安定性"}<small>{i === 0 ? "中心に選びたい" : "相手に応じて活躍"}</small></p></div>)}<p className="reason-card"><span>?</span><strong>選出理由</strong>相手への有効打と受け先を両立し、苦手な相手が重なりにくい3体を優先した。</p></section>
     </div>
     <section className="lead-panel"><div><small>STEP 03 / LEAD</small><h2>相手が最初に出したポケモンは？</h2><p>分かった時点で入力すると、選んだ3体から先発または交代先を提案する。</p></div><input value={enemyLead} onChange={(e) => setEnemyLead(e.target.value)} placeholder="相手のポケモン名" />{lead && <div className="lead-result"><span>推奨</span><MonsterTile mon={lead} index={1} compact /><p><strong>{lead.nickname || lead.species}から始めよう</strong>素早さと相手への打点を評価。苦手なら無理せず交代する。</p></div>}</section>
-  </section>;
-}
-
-function AdminPanel({ entries, category, setCategory, onEdit, onDelete }: { entries: MasterEntry[]; category: MasterCategory; setCategory: (v: MasterCategory) => void; onEdit: (v: MasterEntry) => void; onDelete: (id: number) => void }) {
-  const filtered = entries.filter((entry) => entry.category === category);
-  return <section><PageTitle eyebrow="ADMIN CONSOLE" title="マスターデータ管理" copy="提案で使うポケモン、持ち物、特性、技、性格の基本情報を管理する。" count={`${entries.length}件`} />
-    <div className="admin-tabs">{(Object.keys(categoryNames) as MasterCategory[]).map((key) => <button key={key} className={category === key ? "active" : ""} onClick={() => setCategory(key)}>{categoryNames[key]}<span>{entries.filter((e) => e.category === key).length}</span></button>)}</div>
-    <div className="master-table"><div className="master-head"><span>名前</span><span>分類・タイプ</span><span>初心者向け説明</span><span>操作</span></div>{filtered.map((entry) => <article key={entry.id}><strong>{entry.name}</strong><span>{entry.type || "未設定"}</span><p>{entry.description || "説明なし"}</p><div><button onClick={() => onEdit(entry)}>編集</button><button className="danger-link" onClick={() => onDelete(entry.id)}>削除</button></div></article>)}</div>
   </section>;
 }
 
@@ -545,11 +530,6 @@ function ItemModal({ value, master, onClose, onSave }: { value: OwnedItem; maste
   const [draft, setDraft] = useState(value);
   const items = master.filter((entry) => entry.category === "item");
   return <Modal title={draft.id ? "持ち物を編集" : "持ち物を登録"} subtitle="個数を登録すると構築時の重複を確認できる" onClose={onClose}><div className="form-grid"><label className="wide">持ち物 *<select value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })}><option value="">選択する</option>{draft.name && !items.some((entry) => entry.name === draft.name) && <option value={draft.name} disabled>{draft.name}（マスター未登録）</option>}{items.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>個数<input type="number" min="0" value={draft.quantity} onChange={(e) => setDraft({ ...draft, quantity: Number(e.target.value) })} /></label><label className="wide">メモ<textarea value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></label></div><div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="form-primary" disabled={!draft.name.trim()} onClick={() => onSave(draft)}>保存する</button></div></Modal>;
-}
-
-function MasterModal({ value, onClose, onSave }: { value: MasterEntry; onClose: () => void; onSave: (v: MasterEntry) => void }) {
-  const [draft, setDraft] = useState(value);
-  return <Modal title={draft.id ? `${categoryNames[draft.category]}を編集` : "マスターデータを追加"} subtitle="初心者にも意味が伝わる短い説明を推奨" onClose={onClose}><div className="form-grid"><label>カテゴリ<select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value as MasterCategory })}>{(Object.keys(categoryNames) as MasterCategory[]).map((key) => <option key={key} value={key}>{categoryNames[key]}</option>)}</select></label><label>名前 *<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label><label className="wide">分類・タイプ<input value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value })} /></label><label className="wide">説明<textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label></div><div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="form-primary" disabled={!draft.name.trim()} onClick={() => onSave(draft)}>保存する</button></div></Modal>;
 }
 
 function Modal({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
