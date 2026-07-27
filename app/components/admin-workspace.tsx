@@ -1,24 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { AppState, MasterCategory, MasterEntry } from "../lib/types";
-
-const categoryNames: Record<MasterCategory, string> = {
-  pokemon: "ポケモン",
-  item: "持ち物",
-  ability: "特性",
-  move: "技",
-  nature: "性格",
-};
+import { useCallback, useEffect, useState } from "react";
+import { masterCategoryPages, type MasterCategoryPage } from "../lib/master-categories";
+import type { AppState, MasterEntry } from "../lib/types";
 
 export default function AdminWorkspace({
-  identity,
+  page,
 }: {
-  identity: { displayName: string; handle: string };
+  page: MasterCategoryPage;
 }) {
   const [entries, setEntries] = useState<MasterEntry[]>([]);
-  const [category, setCategory] = useState<MasterCategory>("pokemon");
   const [editor, setEditor] = useState<MasterEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -94,26 +86,10 @@ export default function AdminWorkspace({
     }
   };
 
-  const filtered = useMemo(
-    () => entries.filter((entry) => entry.category === category),
-    [entries, category],
-  );
+  const filtered = entries.filter((entry) => entry.category === page.category);
 
   return (
-    <main className="admin-shell">
-      <header className="admin-header">
-        <Link className="brand" href="/app">
-          <span className="brand-mark">CL</span>
-          <span>CHAMPIONS LAB</span>
-        </Link>
-        <div>
-          <span className="admin-status">管理者</span>
-          <strong>{identity.displayName}</strong>
-          <small>@{identity.handle}</small>
-          <Link className="admin-back-link" href="/app">アプリに戻る →</Link>
-        </div>
-      </header>
-
+    <>
       {notice && <div className="notice" role="status">{notice}</div>}
       {error && (
         <div className="error-banner" role="alert">
@@ -123,27 +99,31 @@ export default function AdminWorkspace({
       )}
 
       <div className="admin-content">
+        <nav className="admin-category-nav" aria-label="マスターデータ管理">
+          <div>
+            <small>MASTER DATA</small>
+            <strong>登録情報</strong>
+          </div>
+          {masterCategoryPages.map((categoryPage) => (
+            <Link
+              key={categoryPage.category}
+              href={`/admin/${categoryPage.slug}`}
+              className={categoryPage.category === page.category ? "active" : ""}
+              aria-current={categoryPage.category === page.category ? "page" : undefined}
+            >
+              <span>{categoryPage.name}</span>
+              <small>{entries.filter((entry) => entry.category === categoryPage.category).length}件</small>
+            </Link>
+          ))}
+        </nav>
+
         <div className="page-title">
           <div>
-            <p>ADMIN CONSOLE</p>
-            <h1>マスターデータ管理</h1>
-            <span>提案で使うポケモン、持ち物、特性、技、性格の基本情報を管理する。</span>
+            <p>{page.eyebrow}</p>
+            <h1>{page.name}管理</h1>
+            <span>{page.description}</span>
           </div>
-          <strong>{entries.length}件</strong>
-        </div>
-
-        <div className="admin-tabs" aria-label="マスターデータのカテゴリ">
-          {(Object.keys(categoryNames) as MasterCategory[]).map((key) => (
-            <button
-              key={key}
-              type="button"
-              className={category === key ? "active" : ""}
-              onClick={() => setCategory(key)}
-            >
-              {categoryNames[key]}
-              <span>{entries.filter((entry) => entry.category === key).length}</span>
-            </button>
-          ))}
+          <strong>{filtered.length}件</strong>
         </div>
 
         {loading ? (
@@ -152,7 +132,7 @@ export default function AdminWorkspace({
           <div className="master-table">
             <div className="master-head">
               <span>名前</span>
-              <span>分類・タイプ</span>
+              <span>{page.typeLabel}</span>
               <span>初心者向け説明</span>
               <span>操作</span>
             </div>
@@ -174,6 +154,13 @@ export default function AdminWorkspace({
                 </div>
               </article>
             ))}
+            {!filtered.length && (
+              <div className="master-empty">
+                <span>◇</span>
+                <strong>{page.name}が登録されていない</strong>
+                <p>「{page.name}を追加」から最初のデータを登録できる。</p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -181,14 +168,15 @@ export default function AdminWorkspace({
       <button
         type="button"
         className="floating-add"
-        onClick={() => setEditor({ id: 0, category, name: "", type: "", description: "" })}
+        onClick={() => setEditor({ id: 0, category: page.category, name: "", type: "", description: "" })}
       >
-        ＋ データを追加
+        ＋ {page.name}を追加
       </button>
 
       {editor && (
         <MasterModal
           value={editor}
+          page={page}
           saving={saving}
           onClose={() => setEditor(null)}
           onSave={async (value) => {
@@ -197,17 +185,19 @@ export default function AdminWorkspace({
           }}
         />
       )}
-    </main>
+    </>
   );
 }
 
 function MasterModal({
   value,
+  page,
   saving,
   onClose,
   onSave,
 }: {
   value: MasterEntry;
+  page: MasterCategoryPage;
   saving: boolean;
   onClose: () => void;
   onSave: (value: MasterEntry) => void;
@@ -226,30 +216,19 @@ function MasterModal({
           <div>
             <small>EDITOR</small>
             <h2 id="master-modal-title">
-              {draft.id ? `${categoryNames[draft.category]}を編集` : "マスターデータを追加"}
+              {draft.id ? `${page.name}を編集` : `${page.name}を追加`}
             </h2>
             <p>初心者にも意味が伝わる短い説明を推奨</p>
           </div>
           <button type="button" onClick={onClose} aria-label="閉じる" disabled={saving}>×</button>
         </header>
         <div className="form-grid">
-          <label>
-            カテゴリ
-            <select
-              value={draft.category}
-              onChange={(event) => setDraft({ ...draft, category: event.target.value as MasterCategory })}
-            >
-              {(Object.keys(categoryNames) as MasterCategory[]).map((key) => (
-                <option key={key} value={key}>{categoryNames[key]}</option>
-              ))}
-            </select>
-          </label>
-          <label>
+          <label className="wide">
             名前 *
             <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           </label>
           <label className="wide">
-            分類・タイプ
+            {page.typeLabel}
             <input value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value })} />
           </label>
           <label className="wide">
