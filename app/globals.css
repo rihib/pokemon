@@ -271,6 +271,30 @@ footer small { grid-column: 1 / -1; color: var(--ink-soft); font-size: 10px; }
   font-size: 10px; font-weight: 900; cursor: pointer;
 }
 .global-setting select:disabled { cursor: wait; opacity: .55; }
+.style-setting { position: relative; display: flex; align-items: center; gap: 5px; }
+.style-help > summary {
+  width: 27px; height: 27px; display: grid; place-items: center; color: var(--blue); background: #edf1ff;
+  border: 1px solid #b8c6f6; border-radius: 50%; font-size: 11px; font-weight: 900; cursor: pointer; list-style: none;
+}
+.style-help > summary::-webkit-details-marker { display: none; }
+.style-help[open] > summary { color: white; background: var(--blue); border-color: var(--blue); }
+.style-help-panel {
+  width: min(560px, calc(100vw - 40px)); position: absolute; top: calc(100% + 11px); right: 0; z-index: 70;
+  padding: 18px; color: var(--ink); background: var(--white); border: 1.5px solid var(--ink); border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(23,63,53,.2);
+}
+.style-help-panel::before { content: ""; position: absolute; top: -7px; right: 8px; width: 12px; height: 12px; background: var(--white); border-left: 1.5px solid var(--ink); border-top: 1.5px solid var(--ink); transform: rotate(45deg); }
+.style-help-panel header { padding-bottom: 13px; border-bottom: 1px solid var(--line); }
+.style-help-panel header small { display: block; color: var(--orange-dark); font: 800 8px/1 monospace; letter-spacing: .12em; }
+.style-help-panel header strong { display: block; margin-top: 7px; font-size: 16px; }
+.style-help-panel header p { margin: 6px 0 0; color: var(--ink-soft); font-size: 9px; line-height: 1.7; }
+.style-help-panel > div { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.style-help-panel article { padding: 12px; background: var(--mint-soft); border: 1px solid transparent; border-radius: 9px; }
+.style-help-panel article.selected { background: #fff8ef; border-color: var(--orange); }
+.style-help-panel article > span { display: block; color: var(--orange-dark); font: 800 7px/1 monospace; letter-spacing: .08em; }
+.style-help-panel article strong { display: block; margin-top: 6px; font-size: 11px; }
+.style-help-panel article p { margin: 6px 0; color: var(--ink-soft); font-size: 8px; line-height: 1.65; }
+.style-help-panel article small { color: var(--ink); font-size: 8px; line-height: 1.55; font-weight: 800; }
 .small-primary { padding: 9px 13px; color: white; background: var(--orange); border-radius: 8px; font-size: 10px; font-weight: 800; }
 .menu-button { display: none; }
 .notice, .error-banner {
@@ -406,6 +430,11 @@ footer small { grid-column: 1 / -1; color: var(--ink-soft); font-size: 10px; }
   .global-setting { grid-template-columns: 1fr; gap: 1px; padding: 3px 4px; }
   .global-setting > span { display: none; }
   .global-setting select { min-height: 30px; max-width: 82px; padding-left: 7px; }
+  .style-setting { gap: 3px; }
+  .style-help > summary { width: 24px; height: 24px; font-size: 10px; }
+  .style-help-panel { position: fixed; top: 78px; left: 10px; right: 10px; width: auto; max-height: calc(100vh - 90px); overflow-y: auto; }
+  .style-help-panel::before { display: none; }
+  .style-help-panel > div { grid-template-columns: 1fr; }
   .opponent-grid { grid-template-columns: 1fr; }
   .selection-row { grid-template-columns: 24px 1fr; }.selection-row > p { grid-column: 2; }
   .master-head { display: none; }.master-table article { grid-template-columns: 1fr auto; }.master-table article > span, .master-table article > p { grid-column: 1 / -1; }
