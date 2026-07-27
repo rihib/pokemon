@@ -17,11 +17,28 @@ const tabMeta: { id: Tab; label: string; icon: string }[] = [
   { id: "settings", label: "アカウント", icon: "○" },
 ];
 
-const styleInfo: Record<PlayStyle, { name: string; copy: string }> = {
-  balance: { name: "バランス", copy: "攻守の役割を偏らせず、対応範囲を広くする" },
-  attack: { name: "速攻", copy: "高い攻撃と素早さで、先に主導権を取る" },
-  control: { name: "コントロール", copy: "交代や補助技を使い、相手の選択肢を狭める" },
-  endurance: { name: "じっくり", copy: "耐久と回復を重視し、少しずつ有利を作る" },
+const styleInfo: Record<PlayStyle, { name: string; copy: string; forWhom: string; recommended?: boolean }> = {
+  balance: {
+    name: "バランス",
+    copy: "攻撃・守り・補助の役割を偏らせず、幅広い相手に対応する。",
+    forWhom: "初めて対戦する人、どれを選ぶか迷っている人",
+    recommended: true,
+  },
+  attack: {
+    name: "速攻",
+    copy: "攻撃と素早さを重視し、相手の準備が整う前に短期決戦を狙う。",
+    forWhom: "自分から攻めたい人、複雑な交代戦をできるだけ減らしたい人",
+  },
+  control: {
+    name: "コントロール",
+    copy: "交代・状態変化・補助技を使い、相手ができることを少しずつ狭める。",
+    forWhom: "相手の行動を読んだり、作戦を組み立てたりするのが好きな人",
+  },
+  endurance: {
+    name: "じっくり",
+    copy: "耐久・回復・交代を重視し、倒されにくさを生かして長期戦で有利を作る。",
+    forWhom: "慌てず考えながら戦いたい人、安全な選択を積み重ねたい人",
+  },
 };
 
 const emptyStats: Stats = { hp: 80, attack: 80, defense: 80, spAttack: 80, spDefense: 80, speed: 80 };
@@ -269,12 +286,31 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
                 <option value="double">ダブル</option>
               </select>
             </label>
-            <label className="global-setting">
-              <span>戦い方</span>
-              <select value={style} disabled={loading || savingPreferences} onChange={(event) => void saveBattlePreferences(format, event.target.value as PlayStyle)}>
-                {(Object.keys(styleInfo) as PlayStyle[]).map((key) => <option key={key} value={key}>{styleInfo[key].name}</option>)}
-              </select>
-            </label>
+            <div className="style-setting">
+              <label className="global-setting">
+                <span>戦い方</span>
+                <select value={style} disabled={loading || savingPreferences} onChange={(event) => void saveBattlePreferences(format, event.target.value as PlayStyle)}>
+                  {(Object.keys(styleInfo) as PlayStyle[]).map((key) => <option key={key} value={key}>{styleInfo[key].name}</option>)}
+                </select>
+              </label>
+              <details className="style-help">
+                <summary aria-label="戦い方の選び方を確認" title="戦い方の選び方">?</summary>
+                <div className="style-help-panel">
+                  <header><small>PLAY STYLE GUIDE</small><strong>どの戦い方を選べばよい？</strong><p>強さの順位ではなく、どのように勝ちたいかの違いである。迷ったらバランスがおすすめ。</p></header>
+                  <div>
+                    {(Object.keys(styleInfo) as PlayStyle[]).map((key) => {
+                      const item = styleInfo[key];
+                      return <article className={style === key ? "selected" : ""} key={key}>
+                        <span>{item.recommended ? "初心者におすすめ" : "PLAY STYLE"}</span>
+                        <strong>{item.name}{style === key ? "（選択中）" : ""}</strong>
+                        <p>{item.copy}</p>
+                        <small>向いている人：{item.forWhom}</small>
+                      </article>;
+                    })}
+                  </div>
+                </div>
+              </details>
+            </div>
           </div>
         </header>
 
