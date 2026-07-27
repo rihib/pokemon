@@ -26,7 +26,7 @@ export const demoMaster: MasterEntry[] = [
 ];
 
 export const demoState: AppState = {
-  user: { email: "demo@example.com", displayName: "ビギナートレーナー", handle: "beginner", role: "admin", preferredStyle: "balance" },
+  user: { email: "demo@example.com", displayName: "ビギナートレーナー", handle: "beginner", role: "admin", preferredFormat: "single", preferredStyle: "balance" },
   roster: demoRoster,
   items: [
     { id: 1, name: "こだわりハチマキ", quantity: 1, notes: "カイリュー用" },
