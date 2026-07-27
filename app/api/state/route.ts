@@ -53,10 +53,8 @@ async function requireIdentity() {
   return { identity, profile: publicProfile(profile) };
 }
 
-async function seedMasterIfEmpty() {
+async function seedBaselineMaster() {
   const db = await getDb();
-  const first = await db.select({ id: masterData.id }).from(masterData).limit(1);
-  if (first.length) return;
   await db.insert(masterData).values(demoMaster.map((entry) => ({
     category: entry.category,
     name: entry.name,
@@ -70,7 +68,7 @@ export async function GET() {
   try {
     const auth = await requireIdentity();
     if (!auth) return Response.json({ error: "ログインが必要である" }, { status: 401 });
-    await seedMasterIfEmpty();
+    await seedBaselineMaster();
     const db = await getDb();
     const [rosterRows, itemRows, masterRows] = await Promise.all([
       db.select().from(roster).where(eq(roster.ownerId, auth.profile.id)).orderBy(asc(roster.id)),
@@ -102,23 +100,39 @@ export async function POST(request: Request) {
     const payload = (body.payload ?? {}) as Record<string, unknown>;
 
     if (action === "save-roster") {
+      const availableMaster = await db.select({
+        category: masterData.category,
+        name: masterData.name,
+        type: masterData.type,
+      }).from(masterData);
+      const species = String(payload.species ?? "").trim();
+      const speciesMaster = availableMaster.find((entry) => entry.category === "pokemon" && entry.name === species);
+      const ability = String(payload.ability ?? "").trim();
+      const heldItem = String(payload.heldItem ?? "").trim();
+      const nature = String(payload.nature ?? "").trim();
+      const moves = Array.isArray(payload.moves) ? payload.moves.map(String).map((move) => move.trim()).filter(Boolean).slice(0, 4) : [];
+      const existsInMaster = (category: "item" | "ability" | "move" | "nature", name: string) =>
+        !name || availableMaster.some((entry) => entry.category === category && entry.name === name);
+      if (!speciesMaster) return Response.json({ error: "マスターデータに登録されたポケモンを選択する必要がある" }, { status: 400 });
+      if (!existsInMaster("ability", ability)) return Response.json({ error: "マスターデータに登録された特性を選択する必要がある" }, { status: 400 });
+      if (!existsInMaster("item", heldItem)) return Response.json({ error: "マスターデータに登録された持ち物を選択する必要がある" }, { status: 400 });
+      if (!existsInMaster("nature", nature)) return Response.json({ error: "マスターデータに登録された性格を選択する必要がある" }, { status: 400 });
+      if (moves.some((move) => !existsInMaster("move", move))) return Response.json({ error: "マスターデータに登録された技を選択する必要がある" }, { status: 400 });
+      if (new Set(moves).size !== moves.length) return Response.json({ error: "同じ技を複数選択することはできない" }, { status: 400 });
       const values = {
         ownerId: auth.profile.id,
-        species: String(payload.species ?? "").trim(),
+        species,
         nickname: String(payload.nickname ?? "").trim(),
-        level: Math.max(1, Math.min(100, Number(payload.level) || 50)),
-        types: String(payload.types ?? "").trim(),
-        teraType: String(payload.teraType ?? "").trim(),
-        ability: String(payload.ability ?? "").trim(),
-        heldItem: String(payload.heldItem ?? "").trim(),
-        nature: String(payload.nature ?? "").trim(),
-        role: String(payload.role ?? "万能").trim(),
-        moves: JSON.stringify(Array.isArray(payload.moves) ? payload.moves.map(String).slice(0, 4) : []),
+        types: speciesMaster.type,
+        ability,
+        heldItem,
+        nature,
+        megaEvolution: Boolean(payload.megaEvolution),
+        moves: JSON.stringify(moves),
         stats: JSON.stringify(payload.stats ?? {}),
         notes: String(payload.notes ?? "").trim(),
         updatedAt: new Date().toISOString(),
       };
-      if (!values.species) return Response.json({ error: "ポケモン名は必須である" }, { status: 400 });
       const id = Number(payload.id);
       const [saved] = id
         ? await db.update(roster).set(values).where(and(eq(roster.id, id), eq(roster.ownerId, auth.profile.id))).returning()
@@ -132,14 +146,17 @@ export async function POST(request: Request) {
     }
 
     if (action === "save-item") {
+      const name = String(payload.name ?? "").trim();
+      const registered = await db.select({ id: masterData.id }).from(masterData)
+        .where(and(eq(masterData.category, "item"), eq(masterData.name, name))).limit(1);
+      if (!registered[0]) return Response.json({ error: "マスターデータに登録された持ち物を選択する必要がある" }, { status: 400 });
       const values = {
         ownerId: auth.profile.id,
-        name: String(payload.name ?? "").trim(),
+        name,
         quantity: Math.max(0, Number(payload.quantity) || 0),
         notes: String(payload.notes ?? "").trim(),
         updatedAt: new Date().toISOString(),
       };
-      if (!values.name) return Response.json({ error: "持ち物名は必須である" }, { status: 400 });
       const id = Number(payload.id);
       const [saved] = id
         ? await db.update(ownedItems).set(values).where(and(eq(ownedItems.id, id), eq(ownedItems.ownerId, auth.profile.id))).returning()
