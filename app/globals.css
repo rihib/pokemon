@@ -227,6 +227,7 @@ footer small { grid-column: 1 / -1; color: var(--ink-soft); font-size: 10px; }
 .side-nav nav button > span { width: 24px; text-align: center; font-size: 17px; }
 .side-nav nav button:hover { background: rgba(255,255,255,.07); color: white; }
 .side-nav nav button.active { background: var(--paper); color: var(--ink); box-shadow: inset 4px 0 var(--orange); }
+.mobile-nav-backdrop { display: none; }
 .side-help { margin: auto 7px 20px; padding: 12px; display: flex; align-items: center; gap: 9px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; }
 .side-help > span { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #88aa9f; border-radius: 50%; }
 .side-help strong, .side-help small { display: block; }
@@ -418,6 +419,7 @@ footer small { grid-column: 1 / -1; color: var(--ink-soft); font-size: 10px; }
   .app-shell { display: block; }
   .side-nav { width: 245px; position: fixed; left: -260px; transition: left .2s ease; box-shadow: 16px 0 40px rgba(0,0,0,.2); }
   .side-nav.open { left: 0; }
+  .mobile-nav-backdrop { position: fixed; inset: 0; z-index: 39; display: block; padding: 0; border: 0; background: rgba(5,30,23,.42); backdrop-filter: blur(1px); cursor: pointer; }
   .menu-button { width: 36px; height: 36px; display: block; color: var(--ink); background: var(--mint); border: 0; border-radius: 8px; }
   .app-top { padding: 0 16px; }.app-top > div:first-of-type { display: none; }
   .top-actions { gap: 7px; }
