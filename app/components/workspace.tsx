@@ -447,9 +447,55 @@ function AdminPanel({ entries, category, setCategory, onEdit, onDelete }: { entr
 function SettingsPanel({ state, visibleRole, format, style, mode, onSave, onDelete }: { state: AppState; visibleRole: "admin" | "user"; format: BattleFormat; style: PlayStyle; mode: "live" | "demo"; onSave: (payload: Record<string, unknown>) => void; onDelete: () => void }) {
   const [name, setName] = useState(state.user.displayName);
   const [handle, setHandle] = useState(state.user.handle);
+  const [handleStatus, setHandleStatus] = useState<"checking" | "available" | "taken" | "invalid" | "error">("available");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const normalizedHandle = handle.trim().replace(/^@/, "").toLowerCase();
+  const handleFormatValid = /^[a-z0-9_-]{3,24}$/.test(normalizedHandle);
+  const handleUnchanged = normalizedHandle === state.user.handle;
+
+  useEffect(() => {
+    const normalized = handle.trim().replace(/^@/, "").toLowerCase();
+    if (!/^[a-z0-9_-]{3,24}$/.test(normalized) || normalized === state.user.handle) return;
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      if (mode === "demo") {
+        setHandleStatus("available");
+        return;
+      }
+      try {
+        const response = await fetch("/api/state", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "check-handle", payload: { handle: normalized } }),
+          signal: controller.signal,
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "確認に失敗した");
+        setHandleStatus(data.available ? "available" : data.reason === "format" ? "invalid" : "taken");
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setHandleStatus("error");
+      }
+    }, 400);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [handle, mode, state.user.handle]);
+
+  const effectiveHandleStatus = !handleFormatValid ? "invalid" : handleUnchanged ? "available" : handleStatus;
+  const handleMessage = {
+    checking: "使用できるか確認中…",
+    available: handleUnchanged ? "現在のユーザー名である。" : "このユーザー名は使用できる。",
+    taken: "このユーザー名は既に使用されている。",
+    invalid: "英小文字・数字・_・-で3〜24文字入力する必要がある。",
+    error: "使用可否を確認できなかった。時間を置いて再入力してほしい。",
+  }[effectiveHandleStatus];
+
   return <section><PageTitle eyebrow="ACCOUNT" title="アカウント設定" copy="表示名、ユーザー名と対戦設定を変更できる。" />
-    <div className="settings-grid"><section className="panel settings-card"><div className="settings-heading"><h2>プロフィール</h2><span className={`role-status ${visibleRole}`}>{visibleRole === "admin" ? "管理者アカウント" : "一般アカウント"}</span></div><label>表示名<input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={handle} maxLength={24} onChange={(e) => setHandle(e.target.value.replace(/^@/, "").toLowerCase())} autoCapitalize="none" /><small className="field-hint">英小文字・数字・_・-で3〜24文字。他のユーザーと同じ名前にはできない。</small></label><label>メールアドレス<input type="email" value={state.user.email} disabled /><small className="field-hint">ChatGPTアカウントから取得するため、このサービス内では変更できない。</small></label><button className="form-primary" onClick={() => onSave({ displayName: name, handle })}>変更を保存</button></section>
+    <div className="settings-grid"><section className="panel settings-card"><div className="settings-heading"><h2>プロフィール</h2><span className={`role-status ${visibleRole}`}>{visibleRole === "admin" ? "管理者アカウント" : "一般アカウント"}</span></div><label>表示名<input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={handle} maxLength={24} onChange={(e) => { setHandle(e.target.value.replace(/^@/, "").toLowerCase()); setHandleStatus("checking"); }} autoCapitalize="none" aria-describedby="handle-availability" /><small id="handle-availability" className={`field-hint handle-${effectiveHandleStatus}`} aria-live="polite">{handleMessage}</small></label><label>メールアドレス<input type="email" value={state.user.email} disabled /><small className="field-hint">ChatGPTアカウントから取得するため、このサービス内では変更できない。</small></label><button className="form-primary" disabled={!name.trim() || effectiveHandleStatus !== "available"} onClick={() => onSave({ displayName: name, handle })}>変更を保存</button></section>
       <section className="panel settings-card"><h2>対戦設定</h2><p>現在の設定。画面上部から変更すると、パーティー構築と対戦ナビへすぐに反映される。</p><div className="setting-summary"><span>対戦形式<strong>{format === "single" ? "シングル" : "ダブル"}</strong></span><span>好みの戦い方<strong>{styleInfo[style].name}</strong></span></div></section>
       <section className="panel danger-zone"><h2>ログアウト・削除</h2><p>ログアウトしても登録データは残る。アカウント削除は手持ちと持ち物を含む全データを削除する。</p>{mode === "live" ? <><a href="/signout-with-chatgpt?return_to=%2F">ログアウト</a>{confirmDelete ? <button className="danger-button" onClick={onDelete}>本当に削除する</button> : <button className="danger-link" onClick={() => setConfirmDelete(true)}>アカウントを削除</button>}</> : <Link href="/">体験版を終了</Link>}</section>
     </div>
