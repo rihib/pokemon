@@ -315,11 +315,36 @@ function ItemsPanel({ items, onEdit, onDelete }: { items: OwnedItem[]; onEdit: (
 }
 
 function BuildPanel({ roster, format, setFormat, style, setStyle, suggestions, selected, setSelected, onRoster }: { roster: RosterEntry[]; format: BattleFormat; setFormat: (v: BattleFormat) => void; style: PlayStyle; setStyle: (v: PlayStyle) => void; suggestions: ReturnType<typeof createSuggestions>; selected: number; setSelected: (v: number) => void; onRoster: () => void }) {
-  if (roster.length < 6) return <section><PageTitle eyebrow="PARTY BUILDER" title="パーティー構築" copy="構築の提案には6体以上の手持ちが必要である。" /><EmptyState title={`あと${6 - roster.length}体登録すると提案できる`} copy="技やステータスは後からでもよい。まずはポケモン名を登録しよう。" action="手持ちを登録" onAction={onRoster} /></section>;
-  return <section><PageTitle eyebrow="PARTY BUILDER" title="パーティー構築" copy="3つの案は強さの順位ではなく、勝ち方の違い。理由を読んで自分に合う案を選べる。" />
-    <div className="builder-controls"><div><label>対戦形式</label><div className="segmented app-segmented"><button className={format === "single" ? "selected" : ""} onClick={() => setFormat("single")}>シングル<small>1体ずつ</small></button><button className={format === "double" ? "selected" : ""} onClick={() => setFormat("double")}>ダブル<small>2体ずつ</small></button></div></div><div><label>好みの戦い方</label><div className="style-tabs">{(Object.keys(styleInfo) as PlayStyle[]).map((key) => <button key={key} className={style === key ? "selected" : ""} onClick={() => setStyle(key)}>{styleInfo[key].name}</button>)}</div></div></div>
-    <div className="suggestion-tabs">{suggestions.map((s, i) => <button key={`${s.title}-${i}`} className={selected === i ? "active" : ""} onClick={() => setSelected(i)}><small>PLAN {String(i + 1).padStart(2, "0")}</small><strong>{s.title}</strong><span>{s.tone}</span><b>{s.score}<em>/100</em></b></button>)}</div>
-    {suggestions[selected] && <article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "あなた向け" : "別の選択肢"}</span><h2>{suggestions[selected].title}パーティー</h2></div><p><span>?</span><strong>この提案の理由</strong>{suggestions[selected].reason}</p></div><div className="suggested-party">{suggestions[selected].members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><div className="beginner-explain"><strong>使い方の目安</strong><span>① 相手の6体を見る</span><span>② 対戦ナビで3体を選ぶ</span><span>③ 最初の1体を確認</span><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>この案を選ぶ ✓</button></div></article>}
+  const ready = roster.length >= 6;
+  return <section>
+    <PageTitle
+      eyebrow="PARTY BUILDER"
+      title="パーティー構築"
+      copy={ready ? "3つの案は強さの順位ではなく、勝ち方の違い。理由を読んで自分に合う案を選べる。" : "対戦形式と好みの戦い方を選び、手持ちが6体そろったら構築を提案する。"}
+    />
+    <div className="builder-controls">
+      <div>
+        <label>対戦形式</label>
+        <div className="segmented app-segmented">
+          <button className={format === "single" ? "selected" : ""} onClick={() => setFormat("single")}>シングル<small>1体ずつ</small></button>
+          <button className={format === "double" ? "selected" : ""} onClick={() => setFormat("double")}>ダブル<small>2体ずつ</small></button>
+        </div>
+      </div>
+      <div>
+        <label>好みの戦い方</label>
+        <div className="style-tabs">
+          {(Object.keys(styleInfo) as PlayStyle[]).map((key) => <button key={key} className={style === key ? "selected" : ""} onClick={() => setStyle(key)}>{styleInfo[key].name}</button>)}
+        </div>
+      </div>
+    </div>
+    {!ready ? (
+      <EmptyState title={`あと${6 - roster.length}体登録すると提案できる`} copy="選んだ対戦形式は構築提案に反映される。技やステータスは後からでもよい。" action="手持ちを登録" onAction={onRoster} />
+    ) : (
+      <>
+        <div className="suggestion-tabs">{suggestions.map((s, i) => <button key={`${s.title}-${i}`} className={selected === i ? "active" : ""} onClick={() => setSelected(i)}><small>PLAN {String(i + 1).padStart(2, "0")}</small><strong>{s.title}</strong><span>{s.tone}</span><b>{s.score}<em>/100</em></b></button>)}</div>
+        {suggestions[selected] && <article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "あなた向け" : "別の選択肢"}</span><h2>{suggestions[selected].title}パーティー</h2></div><p><span>?</span><strong>この提案の理由</strong>{suggestions[selected].reason}</p></div><div className="suggested-party">{suggestions[selected].members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><div className="beginner-explain"><strong>使い方の目安</strong><span>① 相手の6体を見る</span><span>② 対戦ナビで3体を選ぶ</span><span>③ 最初の1体を確認</span><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>この案を選ぶ ✓</button></div></article>}
+      </>
+    )}
   </section>;
 }
 
