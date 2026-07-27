@@ -2,15 +2,27 @@ import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
-  email: text("email").primaryKey(),
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  email: text("email").notNull(),
   displayName: text("display_name").notNull(),
   handle: text("handle").notNull(),
-  role: text("role", { enum: ["admin", "user"] }).notNull().default("user"),
   preferredFormat: text("preferred_format", { enum: ["single", "double"] }).notNull().default("single"),
   preferredStyle: text("preferred_style").notNull().default("balance"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
+  uniqueIndex("users_email_idx").on(table.email),
   uniqueIndex("users_handle_idx").on(table.handle),
+]);
+
+export const authIdentities = sqliteTable("auth_identities", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  provider: text("provider").notNull().default("chatgpt"),
+  providerEmail: text("provider_email").notNull(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("auth_provider_email_idx").on(table.provider, table.providerEmail),
+  index("auth_user_idx").on(table.userId),
 ]);
 
 export const masterData = sqliteTable("master_data", {
@@ -31,7 +43,7 @@ export const masterData = sqliteTable("master_data", {
 
 export const roster = sqliteTable("roster", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  ownerEmail: text("owner_email").notNull().references(() => users.email, { onDelete: "cascade" }),
+  ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   species: text("species").notNull(),
   nickname: text("nickname").notNull().default(""),
   level: integer("level").notNull().default(50),
@@ -47,17 +59,17 @@ export const roster = sqliteTable("roster", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  index("roster_owner_idx").on(table.ownerEmail),
+  index("roster_owner_idx").on(table.ownerId),
 ]);
 
 export const ownedItems = sqliteTable("owned_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  ownerEmail: text("owner_email").notNull().references(() => users.email, { onDelete: "cascade" }),
+  ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   quantity: integer("quantity").notNull().default(1),
   notes: text("notes").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
-  index("items_owner_idx").on(table.ownerEmail),
+  index("items_owner_idx").on(table.ownerId),
 ]);
