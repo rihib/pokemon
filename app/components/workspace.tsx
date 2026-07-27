@@ -42,7 +42,7 @@ const styleInfo: Record<PlayStyle, { name: string; copy: string; forWhom: string
 };
 
 const emptyStats: Stats = { hp: 80, attack: 80, defense: 80, spAttack: 80, spDefense: 80, speed: 80 };
-const emptyRoster = (): RosterEntry => ({ id: 0, species: "", nickname: "", level: 50, types: "", teraType: "", ability: "", heldItem: "", nature: "", role: "万能", moves: ["", "", "", ""], stats: { ...emptyStats }, notes: "" });
+const emptyRoster = (): RosterEntry => ({ id: 0, species: "", nickname: "", types: "", ability: "", heldItem: "", nature: "", megaEvolution: false, moves: ["", "", "", ""], stats: { ...emptyStats }, notes: "" });
 const categoryNames: Record<MasterCategory, string> = { pokemon: "ポケモン", item: "持ち物", ability: "特性", move: "技", nature: "性格" };
 
 function numberScore(mon: RosterEntry, style: PlayStyle) {
@@ -50,9 +50,9 @@ function numberScore(mon: RosterEntry, style: PlayStyle) {
   const offense = Math.max(s.attack, s.spAttack);
   const bulk = s.hp * .35 + s.defense * .325 + s.spDefense * .325;
   if (style === "attack") return offense * .48 + s.speed * .38 + bulk * .14;
-  if (style === "control") return bulk * .35 + s.speed * .22 + offense * .25 + (mon.role.includes("サポ") || mon.role.includes("受け") ? 25 : 0);
+  if (style === "control") return bulk * .35 + s.speed * .22 + offense * .25 + mon.moves.filter(Boolean).length * 3;
   if (style === "endurance") return bulk * .58 + offense * .18 + s.speed * .08 + (mon.moves.some((m) => m.includes("回復") || m.includes("じこさいせい")) ? 25 : 0);
-  return offense * .32 + bulk * .35 + s.speed * .23 + (mon.role.includes("万能") ? 12 : 0);
+  return offense * .32 + bulk * .35 + s.speed * .23 + (mon.megaEvolution ? 8 : 0);
 }
 
 function createSuggestions(roster: RosterEntry[], format: BattleFormat, selectedStyle: PlayStyle) {
@@ -79,8 +79,7 @@ function createSuggestions(roster: RosterEntry[], format: BattleFormat, selected
 }
 
 function reasonFor(style: PlayStyle, format: BattleFormat, members: RosterEntry[]) {
-  const roles = new Set(members.map((m) => m.role));
-  if (style === "attack") return `攻撃性能と素早さの高いポケモンを中心に、${roles.size}種類の役割を確保。相手より先に負荷をかける構成である。`;
+  if (style === "attack") return "攻撃性能と素早さの高いポケモンを中心に、相手より先に負荷をかける構成である。";
   if (style === "control") return `${format === "double" ? "味方への補助と行動順操作" : "交代と状態変化"}を使いやすい役割を優先。相手の得意な動きを止めやすい。`;
   if (style === "endurance") return "HPと防御面を重視し、交代を繰り返しても崩れにくい組み合わせ。長い対戦で判断を立て直しやすい。";
   return `攻撃・受け・補助を混ぜ、タイプを${new Set(members.flatMap((m) => m.types.split(/[・/]/))).size}種類確保。初見の相手にも対応しやすい。`;
@@ -95,7 +94,7 @@ function chooseThree(roster: RosterEntry[], opponents: string[], style: PlayStyl
       if (/ドラゴン|ガブリアス|カイリュー/.test(opponentText) && /フェアリー|こおり/.test(`${mon.types} ${mon.moves.join(" ")}`)) { score += 28; advantages.push("ドラゴンへの打点"); }
       if (/はがね|サーフゴー/.test(opponentText) && /ほのお|じめん|ゴースト/.test(`${mon.types} ${mon.moves.join(" ")}`)) { score += 24; advantages.push("はがねへの打点"); }
       if (/みず|アシレーヌ/.test(opponentText) && /くさ|でんき/.test(`${mon.types} ${mon.moves.join(" ")}`)) { score += 22; advantages.push("みずへの打点"); }
-      if (mon.role.includes("万能") || mon.role.includes("受け")) { score += 8; advantages.push("選出の安定性"); }
+      if (mon.stats.hp + mon.stats.defense + mon.stats.spDefense >= 270) { score += 8; advantages.push("選出の安定性"); }
       return { mon, score, advantages };
     })
     .sort((a, b) => b.score - a.score)
@@ -351,11 +350,11 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
         )}
       </section>
 
-      {rosterEditor && <RosterModal value={rosterEditor} onClose={() => setRosterEditor(null)} onSave={async (value) => {
+      {rosterEditor && <RosterModal value={rosterEditor} master={state.master} onClose={() => setRosterEditor(null)} onSave={async (value) => {
         const ok = await mutate("save-roster", value as unknown as Record<string, unknown>, () => setState((s) => ({ ...s, roster: value.id ? s.roster.map((m) => m.id === value.id ? value : m) : [...s.roster, { ...value, id: Math.max(0, ...s.roster.map((m) => m.id)) + 1 }] })));
         if (ok) setRosterEditor(null);
       }} />}
-      {itemEditor && <ItemModal value={itemEditor} onClose={() => setItemEditor(null)} onSave={async (value) => {
+      {itemEditor && <ItemModal value={itemEditor} master={state.master} onClose={() => setItemEditor(null)} onSave={async (value) => {
         const ok = await mutate("save-item", value as unknown as Record<string, unknown>, () => setState((s) => ({ ...s, items: value.id ? s.items.map((i) => i.id === value.id ? value : i) : [...s.items, { ...value, id: Math.max(0, ...s.items.map((i) => i.id)) + 1 }] })));
         if (ok) setItemEditor(null);
       }} />}
@@ -405,7 +404,7 @@ function Dashboard({ state, onGo, suggestions }: { state: AppState; onGo: (tab: 
 
 function MonsterTile({ mon, index, compact = false }: { mon: RosterEntry; index: number; compact?: boolean }) {
   const colors = ["mint", "gold", "blue", "green", "coral", "violet"];
-  return <div className={`monster-tile ${compact ? "compact" : ""}`}><span className={`creature ${colors[index % colors.length]}`}>{mon.species.slice(0, 1)}</span><div><strong>{mon.nickname || mon.species}</strong><small>{mon.types || "タイプ未登録"}</small>{!compact && <em>{mon.role}</em>}</div></div>;
+  return <div className={`monster-tile ${compact ? "compact" : ""}`}><span className={`creature ${colors[index % colors.length]}`}>{mon.species.slice(0, 1)}</span><div><strong>{mon.nickname || mon.species}</strong><small>{mon.types || "タイプ未登録"}</small>{!compact && mon.megaEvolution && <em>メガ進化</em>}</div></div>;
 }
 
 function RosterPanel({ roster, onEdit, onDelete }: { roster: RosterEntry[]; onEdit: (m: RosterEntry) => void; onDelete: (id: number) => void }) {
@@ -523,21 +522,29 @@ function PageTitle({ eyebrow, title, copy, count }: { eyebrow: string; title: st
 }
 function EmptyState({ title, copy, action, onAction }: { title: string; copy: string; action?: string; onAction?: () => void }) { return <div className="empty-state"><span>◇</span><h2>{title}</h2><p>{copy}</p>{action && <button onClick={onAction}>{action} →</button>}</div>; }
 
-function RosterModal({ value, onClose, onSave }: { value: RosterEntry; onClose: () => void; onSave: (v: RosterEntry) => void }) {
+function RosterModal({ value, master, onClose, onSave }: { value: RosterEntry; master: MasterEntry[]; onClose: () => void; onSave: (v: RosterEntry) => void }) {
   const [draft, setDraft] = useState({ ...value, moves: [...value.moves], stats: { ...value.stats } });
   const update = (key: keyof RosterEntry, val: unknown) => setDraft((d) => ({ ...d, [key]: val }));
-  return <Modal title={draft.id ? "ポケモンを編集" : "ポケモンを登録"} subtitle="分からない項目は空欄でも保存できる" onClose={onClose}>
-    <div className="form-grid"><label className="wide">ポケモン名 *<input value={draft.species} onChange={(e) => update("species", e.target.value)} placeholder="例：カイリュー" /></label><label>ニックネーム<input value={draft.nickname} onChange={(e) => update("nickname", e.target.value)} /></label><label>レベル<input type="number" min="1" max="100" value={draft.level} onChange={(e) => update("level", Number(e.target.value))} /></label><label>タイプ<input value={draft.types} onChange={(e) => update("types", e.target.value)} placeholder="ドラゴン・ひこう" /></label><label>テラスタイプ<input value={draft.teraType} onChange={(e) => update("teraType", e.target.value)} /></label><label>特性<input value={draft.ability} onChange={(e) => update("ability", e.target.value)} /></label><label>持ち物<input value={draft.heldItem} onChange={(e) => update("heldItem", e.target.value)} /></label><label>性格<input value={draft.nature} onChange={(e) => update("nature", e.target.value)} /></label><label>役割<select value={draft.role} onChange={(e) => update("role", e.target.value)}><option>万能アタッカー</option><option>物理アタッカー</option><option>特殊アタッカー</option><option>高速アタッカー</option><option>積みアタッカー</option><option>物理受け</option><option>特殊受け</option><option>耐久</option><option>サポーター</option></select></label>
-      <fieldset className="wide"><legend>技（最大4つ）</legend><div className="move-input-grid">{[0,1,2,3].map((i) => <input key={i} value={draft.moves[i] ?? ""} onChange={(e) => { const moves = [...draft.moves]; moves[i] = e.target.value; update("moves", moves); }} placeholder={`技 ${i + 1}`} />)}</div></fieldset>
+  const pokemon = master.filter((entry) => entry.category === "pokemon");
+  const abilities = master.filter((entry) => entry.category === "ability");
+  const items = master.filter((entry) => entry.category === "item");
+  const natures = master.filter((entry) => entry.category === "nature");
+  const moves = master.filter((entry) => entry.category === "move");
+  const legacyOption = (current: string, options: MasterEntry[]) => current && !options.some((entry) => entry.name === current)
+    ? <option value={current} disabled>{current}（マスター未登録）</option> : null;
+  return <Modal title={draft.id ? "ポケモンを編集" : "ポケモンを登録"} subtitle="マスターデータから選択して対戦情報を登録する" onClose={onClose}>
+    <div className="form-grid"><label className="wide">ポケモン *<select value={draft.species} onChange={(e) => { const selected = pokemon.find((entry) => entry.name === e.target.value); setDraft((current) => ({ ...current, species: e.target.value, types: selected?.type ?? "" })); }}><option value="">選択する</option>{legacyOption(draft.species, pokemon)}{pokemon.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}{entry.type ? `（${entry.type}）` : ""}</option>)}</select></label><label>ニックネーム<input value={draft.nickname} onChange={(e) => update("nickname", e.target.value)} /></label><label>タイプ<input value={draft.types || "ポケモンのマスター情報から設定"} disabled /></label><label>特性<select value={draft.ability} onChange={(e) => update("ability", e.target.value)}><option value="">未設定</option>{legacyOption(draft.ability, abilities)}{abilities.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>持ち物<select value={draft.heldItem} onChange={(e) => update("heldItem", e.target.value)}><option value="">なし・未設定</option>{legacyOption(draft.heldItem, items)}{items.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>性格<select value={draft.nature} onChange={(e) => update("nature", e.target.value)}><option value="">未設定</option>{legacyOption(draft.nature, natures)}{natures.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label className="toggle-field"><input type="checkbox" checked={draft.megaEvolution} onChange={(e) => update("megaEvolution", e.target.checked)} /><span><strong>メガ進化を使用する</strong><small>このポケモンをメガ進化枠として扱う</small></span></label>
+      <fieldset className="wide"><legend>技（最大4つ）</legend><div className="move-input-grid">{[0,1,2,3].map((i) => <select key={i} value={draft.moves[i] ?? ""} onChange={(e) => { const nextMoves = [...draft.moves]; nextMoves[i] = e.target.value; update("moves", nextMoves); }}><option value="">技 {i + 1}：未設定</option>{legacyOption(draft.moves[i] ?? "", moves)}{moves.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select>)}</div></fieldset>
       <fieldset className="wide"><legend>種族値・ステータス目安</legend><div className="stat-input-grid">{([["hp","HP"],["attack","攻撃"],["defense","防御"],["spAttack","特攻"],["spDefense","特防"],["speed","素早さ"]] as [keyof Stats,string][]).map(([key,label]) => <label key={key}>{label}<input type="number" min="1" max="255" value={draft.stats[key]} onChange={(e) => update("stats", { ...draft.stats, [key]: Number(e.target.value) })} /></label>)}</div></fieldset>
-      <label className="wide">メモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} placeholder="役割や使い方を記録" /></label>
+      <label className="wide">メモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} placeholder="使い方や注意点を記録" /></label>
     </div><div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="form-primary" disabled={!draft.species.trim()} onClick={() => onSave(draft)}>保存する</button></div>
   </Modal>;
 }
 
-function ItemModal({ value, onClose, onSave }: { value: OwnedItem; onClose: () => void; onSave: (v: OwnedItem) => void }) {
+function ItemModal({ value, master, onClose, onSave }: { value: OwnedItem; master: MasterEntry[]; onClose: () => void; onSave: (v: OwnedItem) => void }) {
   const [draft, setDraft] = useState(value);
-  return <Modal title={draft.id ? "持ち物を編集" : "持ち物を登録"} subtitle="個数を登録すると構築時の重複を確認できる" onClose={onClose}><div className="form-grid"><label className="wide">持ち物名 *<input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label><label>個数<input type="number" min="0" value={draft.quantity} onChange={(e) => setDraft({ ...draft, quantity: Number(e.target.value) })} /></label><label className="wide">メモ<textarea value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></label></div><div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="form-primary" disabled={!draft.name.trim()} onClick={() => onSave(draft)}>保存する</button></div></Modal>;
+  const items = master.filter((entry) => entry.category === "item");
+  return <Modal title={draft.id ? "持ち物を編集" : "持ち物を登録"} subtitle="個数を登録すると構築時の重複を確認できる" onClose={onClose}><div className="form-grid"><label className="wide">持ち物 *<select value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })}><option value="">選択する</option>{draft.name && !items.some((entry) => entry.name === draft.name) && <option value={draft.name} disabled>{draft.name}（マスター未登録）</option>}{items.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>個数<input type="number" min="0" value={draft.quantity} onChange={(e) => setDraft({ ...draft, quantity: Number(e.target.value) })} /></label><label className="wide">メモ<textarea value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></label></div><div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="form-primary" disabled={!draft.name.trim()} onClick={() => onSave(draft)}>保存する</button></div></Modal>;
 }
 
 function MasterModal({ value, onClose, onSave }: { value: MasterEntry; onClose: () => void; onSave: (v: MasterEntry) => void }) {
