@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1785137038439,
+      "tag": "0000_next_legion",
+      "breakpoints": true
+    }
+  ]
+}
