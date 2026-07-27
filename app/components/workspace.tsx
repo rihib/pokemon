@@ -106,6 +106,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
   const [enemyLead, setEnemyLead] = useState("カイリュー");
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [category, setCategory] = useState<MasterCategory>("pokemon");
+  const [previewAsUser, setPreviewAsUser] = useState(false);
 
   const refresh = async () => {
     if (mode === "demo") return;
@@ -170,7 +171,15 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
     })[0];
   }, [selection, enemyLead, style]);
 
-  const nav = tabMeta.filter((item) => item.id !== "admin" || state.user.role === "admin");
+  const isAdmin = state.user.role === "admin";
+  const visibleRole: "admin" | "user" = isAdmin && !previewAsUser ? "admin" : "user";
+  const nav = tabMeta.filter((item) => item.id !== "admin" || visibleRole === "admin");
+  const toggleRolePreview = () => {
+    const next = !previewAsUser;
+    setPreviewAsUser(next);
+    if (next && tab === "admin") setTab("home");
+    if (next) setMasterEditor(null);
+  };
 
   return (
     <main className="app-shell">
@@ -189,7 +198,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
           <div>
             <strong>{state.user.displayName}</strong>
             <small>@{state.user.handle}</small>
-            {state.user.role === "admin" && <em className="admin-badge">管理者</em>}
+            {visibleRole === "admin" && <em className="admin-badge">管理者</em>}
           </div>
         </div>
       </aside>
@@ -200,11 +209,27 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
           <div><p>BEGINNER SUPPORT MODE</p><strong>{tabMeta.find((item) => item.id === tab)?.label}</strong></div>
           <div className="top-actions">
             {mode === "demo" && <a href="/signin-with-chatgpt?return_to=%2Fapp" className="small-primary">無料で保存する</a>}
-            {state.user.role === "admin" && <span className="admin-status" aria-label="管理者としてログイン中">管理者</span>}
+            {isAdmin && (
+              <button
+                className={`role-preview-toggle ${previewAsUser ? "previewing" : ""}`}
+                type="button"
+                onClick={toggleRolePreview}
+                aria-pressed={previewAsUser}
+              >
+                {previewAsUser ? "管理者表示に戻る" : "一般ユーザー表示"}
+              </button>
+            )}
+            {visibleRole === "admin" && <span className="admin-status" aria-label="管理者としてログイン中">管理者</span>}
             <span className="format-pill">{format === "single" ? "シングル" : "ダブル"}</span>
           </div>
         </header>
 
+        {previewAsUser && (
+          <div className="role-preview-banner" role="status">
+            一般ユーザーとしての表示を確認中
+            <button type="button" onClick={toggleRolePreview}>管理者表示に戻る</button>
+          </div>
+        )}
         {notice && <div className="notice" role="status">{notice}</div>}
         {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError("")}>×</button></div>}
         {loading ? <Loading /> : (
@@ -214,8 +239,8 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
             {tab === "items" && <ItemsPanel items={state.items} onEdit={setItemEditor} onDelete={(id) => void mutate("delete-item", { id }, () => setState((s) => ({ ...s, items: s.items.filter((i) => i.id !== id) })))} />}
             {tab === "build" && <BuildPanel roster={state.roster} format={format} setFormat={setFormat} style={style} setStyle={setStyle} suggestions={suggestions} selected={selectedSuggestion} setSelected={setSelectedSuggestion} onRoster={() => setTab("roster")} />}
             {tab === "battle" && <BattlePanel opponents={opponents} setOpponents={setOpponents} selection={selection} enemyLead={enemyLead} setEnemyLead={setEnemyLead} lead={lead} onRoster={() => setTab("roster")} />}
-            {tab === "admin" && <AdminPanel entries={state.master} category={category} setCategory={setCategory} onEdit={setMasterEditor} onDelete={(id) => void mutate("delete-master", { id }, () => setState((s) => ({ ...s, master: s.master.filter((m) => m.id !== id) })))} />}
-            {tab === "settings" && <SettingsPanel state={state} style={style} setStyle={setStyle} mode={mode} onSave={(payload) => void mutate("save-profile", payload, () => setState((s) => ({ ...s, user: { ...s.user, ...payload } })))} onDelete={() => void mutate("delete-account", {}, () => { window.location.href = "/"; })} />}
+            {tab === "admin" && visibleRole === "admin" && <AdminPanel entries={state.master} category={category} setCategory={setCategory} onEdit={setMasterEditor} onDelete={(id) => void mutate("delete-master", { id }, () => setState((s) => ({ ...s, master: s.master.filter((m) => m.id !== id) })))} />}
+            {tab === "settings" && <SettingsPanel state={state} visibleRole={visibleRole} style={style} setStyle={setStyle} mode={mode} onSave={(payload) => void mutate("save-profile", payload, () => setState((s) => ({ ...s, user: { ...s.user, ...payload } })))} onDelete={() => void mutate("delete-account", {}, () => { window.location.href = "/"; })} />}
           </div>
         )}
       </section>
@@ -235,7 +260,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
 
       {tab === "roster" && <button className="floating-add" onClick={() => setRosterEditor(emptyRoster())}>＋ ポケモンを登録</button>}
       {tab === "items" && <button className="floating-add" onClick={() => setItemEditor({ id: 0, name: "", quantity: 1, notes: "" })}>＋ 持ち物を登録</button>}
-      {tab === "admin" && <button className="floating-add" onClick={() => setMasterEditor({ id: 0, category, name: "", type: "", description: "" })}>＋ データを追加</button>}
+      {tab === "admin" && visibleRole === "admin" && <button className="floating-add" onClick={() => setMasterEditor({ id: 0, category, name: "", type: "", description: "" })}>＋ データを追加</button>}
     </main>
   );
 }
@@ -317,11 +342,11 @@ function AdminPanel({ entries, category, setCategory, onEdit, onDelete }: { entr
   </section>;
 }
 
-function SettingsPanel({ state, style, setStyle, mode, onSave, onDelete }: { state: AppState; style: PlayStyle; setStyle: (s: PlayStyle) => void; mode: "live" | "demo"; onSave: (payload: Record<string, unknown>) => void; onDelete: () => void }) {
+function SettingsPanel({ state, visibleRole, style, setStyle, mode, onSave, onDelete }: { state: AppState; visibleRole: "admin" | "user"; style: PlayStyle; setStyle: (s: PlayStyle) => void; mode: "live" | "demo"; onSave: (payload: Record<string, unknown>) => void; onDelete: () => void }) {
   const [name, setName] = useState(state.user.displayName);
   const [confirmDelete, setConfirmDelete] = useState(false);
   return <section><PageTitle eyebrow="ACCOUNT" title="アカウント設定" copy="表示名と、標準で使う戦い方を変更できる。" />
-    <div className="settings-grid"><section className="panel settings-card"><div className="settings-heading"><h2>プロフィール</h2><span className={`role-status ${state.user.role}`}>{state.user.role === "admin" ? "管理者アカウント" : "一般アカウント"}</span></div><label>表示名<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={`@${state.user.handle}`} disabled /></label><label>メールアドレス<input value={state.user.email} disabled /></label><button className="form-primary" onClick={() => onSave({ displayName: name, preferredStyle: style })}>変更を保存</button></section>
+    <div className="settings-grid"><section className="panel settings-card"><div className="settings-heading"><h2>プロフィール</h2><span className={`role-status ${visibleRole}`}>{visibleRole === "admin" ? "管理者アカウント" : "一般アカウント"}</span></div><label>表示名<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={`@${state.user.handle}`} disabled /></label><label>メールアドレス<input value={state.user.email} disabled /></label><button className="form-primary" onClick={() => onSave({ displayName: name, preferredStyle: style })}>変更を保存</button></section>
       <section className="panel settings-card"><h2>好みの戦い方</h2><p>構築提案で最初に表示する方針。</p><div className="setting-style-list">{(Object.keys(styleInfo) as PlayStyle[]).map((key) => <button key={key} className={style === key ? "selected" : ""} onClick={() => setStyle(key)}><span>{style === key ? "✓" : ""}</span><strong>{styleInfo[key].name}</strong><small>{styleInfo[key].copy}</small></button>)}</div></section>
       <section className="panel danger-zone"><h2>ログアウト・削除</h2><p>ログアウトしても登録データは残る。アカウント削除は手持ちと持ち物を含む全データを削除する。</p>{mode === "live" ? <><a href="/signout-with-chatgpt?return_to=%2F">ログアウト</a>{confirmDelete ? <button className="danger-button" onClick={onDelete}>本当に削除する</button> : <button className="danger-link" onClick={() => setConfirmDelete(true)}>アカウントを削除</button>}</> : <Link href="/">体験版を終了</Link>}</section>
     </div>
