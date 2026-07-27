@@ -22,6 +22,13 @@
       "when": 1785142555919,
       "tag": "0002_graceful_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785145517064,
+      "tag": "0003_nebulous_vin_gonzales",
+      "breakpoints": true
     }
   ]
 }
