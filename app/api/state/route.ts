@@ -4,6 +4,8 @@ import { masterData, ownedItems, roster, users } from "../../../db/schema";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { demoMaster } from "../../lib/demo-data";
 
+const ADMIN_EMAIL = "rihib@rihib.dev";
+
 function safeJson<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
@@ -15,8 +17,8 @@ function handleFrom(email: string, displayName: string) {
   return candidate || `trainer-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function isRihib(email: string, displayName: string) {
-  return email.split("@")[0].toLowerCase() === "rihib" || displayName.trim().toLowerCase() === "rihib";
+function roleForEmail(email: string): "admin" | "user" {
+  return email.trim().toLowerCase() === ADMIN_EMAIL ? "admin" : "user";
 }
 
 async function requireIdentity() {
@@ -24,9 +26,20 @@ async function requireIdentity() {
   if (!identity) return null;
   const db = await getDb();
   const existing = await db.select().from(users).where(eq(users.email, identity.email)).limit(1);
-  if (existing[0]) return { identity, profile: existing[0] };
+  if (existing[0]) {
+    const expectedRole = roleForEmail(identity.email);
+    if (existing[0].role !== expectedRole) {
+      const [profile] = await db
+        .update(users)
+        .set({ role: expectedRole })
+        .where(eq(users.email, identity.email))
+        .returning();
+      return { identity, profile };
+    }
+    return { identity, profile: existing[0] };
+  }
 
-  const role = isRihib(identity.email, identity.displayName) ? "admin" as const : "user" as const;
+  const role = roleForEmail(identity.email);
   const baseHandle = handleFrom(identity.email, identity.displayName);
   let handle = baseHandle;
   const collision = await db.select({ email: users.email }).from(users).where(eq(users.handle, handle)).limit(1);
