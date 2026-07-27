@@ -6,6 +6,7 @@ export const users = sqliteTable("users", {
   displayName: text("display_name").notNull(),
   handle: text("handle").notNull(),
   role: text("role", { enum: ["admin", "user"] }).notNull().default("user"),
+  preferredFormat: text("preferred_format", { enum: ["single", "double"] }).notNull().default("single"),
   preferredStyle: text("preferred_style").notNull().default("balance"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
