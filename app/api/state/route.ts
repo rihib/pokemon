@@ -1,56 +1,11 @@
 import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { authIdentities, masterData, ownedItems, roster, users } from "../../../db/schema";
-import { getChatGPTUser } from "../../chatgpt-auth";
+import { masterData, ownedItems, roster, users } from "../../../db/schema";
 import { demoMaster } from "../../lib/demo-data";
-
-const ADMIN_USER_ID = 1;
+import { publicProfile, requireAppIdentity } from "../../lib/server-identity";
 
 function safeJson<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
-}
-
-function handleFrom(email: string, displayName: string) {
-  const candidate = displayName.trim().toLowerCase() === "rihib"
-    ? "rihib"
-    : email.split("@")[0].toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 24);
-  return candidate || `trainer-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function roleForUserId(userId: number): "admin" | "user" {
-  return userId === ADMIN_USER_ID ? "admin" : "user";
-}
-
-function publicProfile<T extends typeof users.$inferSelect>(profile: T) {
-  return { ...profile, role: roleForUserId(profile.id) };
-}
-
-async function requireIdentity() {
-  const identity = await getChatGPTUser();
-  if (!identity) return null;
-  const db = await getDb();
-  const providerEmail = identity.email.trim().toLowerCase();
-  const linked = await db
-    .select({ profile: users })
-    .from(authIdentities)
-    .innerJoin(users, eq(authIdentities.userId, users.id))
-    .where(and(eq(authIdentities.provider, "chatgpt"), eq(authIdentities.providerEmail, providerEmail)))
-    .limit(1);
-  if (linked[0]) {
-    return { identity, profile: publicProfile(linked[0].profile) };
-  }
-
-  const baseHandle = handleFrom(providerEmail, identity.displayName);
-  let handle = baseHandle;
-  const collision = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle)).limit(1);
-  if (collision[0]) handle = `${baseHandle}-${Math.random().toString(36).slice(2, 6)}`;
-  const [profile] = await db.insert(users).values({
-    email: providerEmail,
-    displayName: identity.displayName,
-    handle,
-  }).returning();
-  await db.insert(authIdentities).values({ provider: "chatgpt", providerEmail, userId: profile.id });
-  return { identity, profile: publicProfile(profile) };
 }
 
 async function seedBaselineMaster() {
@@ -66,7 +21,7 @@ async function seedBaselineMaster() {
 
 export async function GET() {
   try {
-    const auth = await requireIdentity();
+    const auth = await requireAppIdentity();
     if (!auth) return Response.json({ error: "ログインが必要である" }, { status: 401 });
     await seedBaselineMaster();
     const db = await getDb();
@@ -92,7 +47,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const auth = await requireIdentity();
+    const auth = await requireAppIdentity();
     if (!auth) return Response.json({ error: "ログインが必要である" }, { status: 401 });
     const db = await getDb();
     const body = await request.json() as Record<string, unknown>;
