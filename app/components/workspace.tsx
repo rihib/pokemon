@@ -100,13 +100,14 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
   const [rosterEditor, setRosterEditor] = useState<RosterEntry | null>(null);
   const [itemEditor, setItemEditor] = useState<OwnedItem | null>(null);
   const [masterEditor, setMasterEditor] = useState<MasterEntry | null>(null);
-  const [format, setFormat] = useState<BattleFormat>("single");
-  const [style, setStyle] = useState<PlayStyle>("balance");
+  const [format, setFormat] = useState<BattleFormat>(demoState.user.preferredFormat);
+  const [style, setStyle] = useState<PlayStyle>(demoState.user.preferredStyle);
   const [opponents, setOpponents] = useState(["カイリュー", "サーフゴー", "ウーラオス", "ハバタクカミ", "ゴリランダー", "ガオガエン"]);
   const [enemyLead, setEnemyLead] = useState("カイリュー");
   const [selectedSuggestion, setSelectedSuggestion] = useState(0);
   const [category, setCategory] = useState<MasterCategory>("pokemon");
   const [previewAsUser, setPreviewAsUser] = useState(false);
+  const [savingPreferences, setSavingPreferences] = useState(false);
 
   const refresh = async () => {
     if (mode === "demo") return;
@@ -116,6 +117,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "読み込みに失敗した");
       setState(data);
+      setFormat(data.user.preferredFormat);
       setStyle(data.user.preferredStyle);
     } catch (e) {
       setError(e instanceof Error ? e.message : "読み込みに失敗した");
@@ -134,6 +136,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
       .then((data) => {
         if (!active) return;
         setState(data);
+        setFormat(data.user.preferredFormat);
         setStyle(data.user.preferredStyle);
       })
       .catch((e: unknown) => { if (active) setError(e instanceof Error ? e.message : "読み込みに失敗した"); })
@@ -159,6 +162,45 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
       window.setTimeout(() => setNotice(""), 1800);
       return true;
     } catch (e) { setError(e instanceof Error ? e.message : "保存に失敗した"); return false; }
+  };
+
+  const saveBattlePreferences = async (nextFormat: BattleFormat, nextStyle: PlayStyle) => {
+    const previousFormat = format;
+    const previousStyle = style;
+    setFormat(nextFormat);
+    setStyle(nextStyle);
+    setState((current) => ({
+      ...current,
+      user: { ...current.user, preferredFormat: nextFormat, preferredStyle: nextStyle },
+    }));
+    if (mode === "demo") {
+      setNotice("体験版の対戦設定を変更した");
+      window.setTimeout(() => setNotice("体験版：変更はこの画面を閉じると消える"), 1800);
+      return;
+    }
+    setSavingPreferences(true);
+    try {
+      const response = await fetch("/api/state", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "save-profile", payload: { preferredFormat: nextFormat, preferredStyle: nextStyle } }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "対戦設定の保存に失敗した");
+      setState((current) => ({ ...current, user: { ...current.user, ...data.saved } }));
+      setNotice("対戦設定を保存した");
+      window.setTimeout(() => setNotice(""), 1800);
+    } catch (e) {
+      setFormat(previousFormat);
+      setStyle(previousStyle);
+      setState((current) => ({
+        ...current,
+        user: { ...current.user, preferredFormat: previousFormat, preferredStyle: previousStyle },
+      }));
+      setError(e instanceof Error ? e.message : "対戦設定の保存に失敗した");
+    } finally {
+      setSavingPreferences(false);
+    }
   };
 
   const suggestions = useMemo(() => createSuggestions(state.roster, format, style), [state.roster, format, style]);
@@ -220,7 +262,19 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
               </button>
             )}
             {visibleRole === "admin" && <span className="admin-status" aria-label="管理者としてログイン中">管理者</span>}
-            <span className="format-pill">{format === "single" ? "シングル" : "ダブル"}</span>
+            <label className="global-setting">
+              <span>対戦形式</span>
+              <select value={format} disabled={loading || savingPreferences} onChange={(event) => void saveBattlePreferences(event.target.value as BattleFormat, style)}>
+                <option value="single">シングル</option>
+                <option value="double">ダブル</option>
+              </select>
+            </label>
+            <label className="global-setting">
+              <span>戦い方</span>
+              <select value={style} disabled={loading || savingPreferences} onChange={(event) => void saveBattlePreferences(format, event.target.value as PlayStyle)}>
+                {(Object.keys(styleInfo) as PlayStyle[]).map((key) => <option key={key} value={key}>{styleInfo[key].name}</option>)}
+              </select>
+            </label>
           </div>
         </header>
 
@@ -237,10 +291,10 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
             {tab === "home" && <Dashboard state={state} onGo={setTab} suggestions={suggestions} />}
             {tab === "roster" && <RosterPanel roster={state.roster} onEdit={setRosterEditor} onDelete={(id) => void mutate("delete-roster", { id }, () => setState((s) => ({ ...s, roster: s.roster.filter((m) => m.id !== id) })))} />}
             {tab === "items" && <ItemsPanel items={state.items} onEdit={setItemEditor} onDelete={(id) => void mutate("delete-item", { id }, () => setState((s) => ({ ...s, items: s.items.filter((i) => i.id !== id) })))} />}
-            {tab === "build" && <BuildPanel roster={state.roster} format={format} setFormat={setFormat} style={style} setStyle={setStyle} suggestions={suggestions} selected={selectedSuggestion} setSelected={setSelectedSuggestion} onRoster={() => setTab("roster")} />}
-            {tab === "battle" && <BattlePanel opponents={opponents} setOpponents={setOpponents} selection={selection} enemyLead={enemyLead} setEnemyLead={setEnemyLead} lead={lead} onRoster={() => setTab("roster")} />}
+            {tab === "build" && <BuildPanel roster={state.roster} format={format} style={style} suggestions={suggestions} selected={selectedSuggestion} setSelected={setSelectedSuggestion} onRoster={() => setTab("roster")} />}
+            {tab === "battle" && <BattlePanel format={format} style={style} opponents={opponents} setOpponents={setOpponents} selection={selection} enemyLead={enemyLead} setEnemyLead={setEnemyLead} lead={lead} onRoster={() => setTab("roster")} />}
             {tab === "admin" && visibleRole === "admin" && <AdminPanel entries={state.master} category={category} setCategory={setCategory} onEdit={setMasterEditor} onDelete={(id) => void mutate("delete-master", { id }, () => setState((s) => ({ ...s, master: s.master.filter((m) => m.id !== id) })))} />}
-            {tab === "settings" && <SettingsPanel state={state} visibleRole={visibleRole} style={style} setStyle={setStyle} mode={mode} onSave={(payload) => void mutate("save-profile", payload, () => setState((s) => ({ ...s, user: { ...s.user, ...payload } })))} onDelete={() => void mutate("delete-account", {}, () => { window.location.href = "/"; })} />}
+            {tab === "settings" && <SettingsPanel state={state} visibleRole={visibleRole} format={format} style={style} mode={mode} onSave={(payload) => void mutate("save-profile", payload, () => setState((s) => ({ ...s, user: { ...s.user, ...payload } })))} onDelete={() => void mutate("delete-account", {}, () => { window.location.href = "/"; })} />}
           </div>
         )}
       </section>
@@ -314,31 +368,17 @@ function ItemsPanel({ items, onEdit, onDelete }: { items: OwnedItem[]; onEdit: (
     {!items.length && <EmptyState title="持ち物が登録されていない" copy="持っている数を登録すると、同じ持ち物の使いすぎを防げる。" />}</section>;
 }
 
-function BuildPanel({ roster, format, setFormat, style, setStyle, suggestions, selected, setSelected, onRoster }: { roster: RosterEntry[]; format: BattleFormat; setFormat: (v: BattleFormat) => void; style: PlayStyle; setStyle: (v: PlayStyle) => void; suggestions: ReturnType<typeof createSuggestions>; selected: number; setSelected: (v: number) => void; onRoster: () => void }) {
+function BuildPanel({ roster, format, style, suggestions, selected, setSelected, onRoster }: { roster: RosterEntry[]; format: BattleFormat; style: PlayStyle; suggestions: ReturnType<typeof createSuggestions>; selected: number; setSelected: (v: number) => void; onRoster: () => void }) {
   const ready = roster.length >= 6;
   return <section>
     <PageTitle
       eyebrow="PARTY BUILDER"
       title="パーティー構築"
-      copy={ready ? "3つの案は強さの順位ではなく、勝ち方の違い。理由を読んで自分に合う案を選べる。" : "対戦形式と好みの戦い方を選び、手持ちが6体そろったら構築を提案する。"}
+      copy={ready ? "上部で選んだ対戦設定に合わせて3案を提案する。強さの順位ではなく、勝ち方の違いから選べる。" : "上部の対戦設定に合わせ、手持ちが6体そろったら構築を提案する。"}
+      count={`${format === "single" ? "シングル" : "ダブル"}・${styleInfo[style].name}`}
     />
-    <div className="builder-controls">
-      <div>
-        <label>対戦形式</label>
-        <div className="segmented app-segmented">
-          <button className={format === "single" ? "selected" : ""} onClick={() => setFormat("single")}>シングル<small>1体ずつ</small></button>
-          <button className={format === "double" ? "selected" : ""} onClick={() => setFormat("double")}>ダブル<small>2体ずつ</small></button>
-        </div>
-      </div>
-      <div>
-        <label>好みの戦い方</label>
-        <div className="style-tabs">
-          {(Object.keys(styleInfo) as PlayStyle[]).map((key) => <button key={key} className={style === key ? "selected" : ""} onClick={() => setStyle(key)}>{styleInfo[key].name}</button>)}
-        </div>
-      </div>
-    </div>
     {!ready ? (
-      <EmptyState title={`あと${6 - roster.length}体登録すると提案できる`} copy="選んだ対戦形式は構築提案に反映される。技やステータスは後からでもよい。" action="手持ちを登録" onAction={onRoster} />
+      <EmptyState title={`あと${6 - roster.length}体登録すると提案できる`} copy="現在の対戦形式と戦い方は画面上部からいつでも変更できる。技やステータスは後からでもよい。" action="手持ちを登録" onAction={onRoster} />
     ) : (
       <>
         <div className="suggestion-tabs">{suggestions.map((s, i) => <button key={`${s.title}-${i}`} className={selected === i ? "active" : ""} onClick={() => setSelected(i)}><small>PLAN {String(i + 1).padStart(2, "0")}</small><strong>{s.title}</strong><span>{s.tone}</span><b>{s.score}<em>/100</em></b></button>)}</div>
@@ -348,9 +388,10 @@ function BuildPanel({ roster, format, setFormat, style, setStyle, suggestions, s
   </section>;
 }
 
-function BattlePanel({ opponents, setOpponents, selection, enemyLead, setEnemyLead, lead, onRoster }: { opponents: string[]; setOpponents: (v: string[]) => void; selection: ReturnType<typeof chooseThree>; enemyLead: string; setEnemyLead: (v: string) => void; lead?: RosterEntry; onRoster: () => void }) {
-  if (!selection.length) return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手の情報から、選出と先発を順番に提案する。" /><EmptyState title="まず手持ちを登録しよう" copy="選べるポケモンがないため、まだ提案を作れない。" action="手持ちを登録" onAction={onRoster} /></section>;
-  return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手の6体を入力すると、役割と相性から使う3体を提案する。" />
+function BattlePanel({ format, style, opponents, setOpponents, selection, enemyLead, setEnemyLead, lead, onRoster }: { format: BattleFormat; style: PlayStyle; opponents: string[]; setOpponents: (v: string[]) => void; selection: ReturnType<typeof chooseThree>; enemyLead: string; setEnemyLead: (v: string) => void; lead?: RosterEntry; onRoster: () => void }) {
+  const settingLabel = `${format === "single" ? "シングル" : "ダブル"}・${styleInfo[style].name}`;
+  if (!selection.length) return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手の情報から、選出と先発を順番に提案する。" count={settingLabel} /><EmptyState title="まず手持ちを登録しよう" copy="選べるポケモンがないため、まだ提案を作れない。" action="手持ちを登録" onAction={onRoster} /></section>;
+  return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手の6体を入力すると、上部で選んだ対戦設定に合わせて使用候補を提案する。" count={settingLabel} />
     <div className="battle-flow"><span className="done">1<small>相手の6体</small></span><i></i><span className="done">2<small>3体を選出</small></span><i></i><span>3<small>先発を決定</small></span></div>
     <div className="battle-layout"><section className="panel opponent-panel"><div className="panel-head"><div><small>OPPONENT TEAM</small><h2>相手の6体</h2></div><span>入力は名前だけでOK</span></div><div className="opponent-grid">{opponents.map((value, i) => <label key={i}><span>{i + 1}</span><input value={value} onChange={(e) => { const next = [...opponents]; next[i] = e.target.value; setOpponents(next); }} placeholder="ポケモン名" /></label>)}</div></section>
       <section className="panel selection-panel"><div className="panel-head"><div><small>RECOMMENDED PICK</small><h2>この3体がおすすめ</h2></div><span className="score-ring small">{Math.min(99, 78 + selection[0].advantages.length * 4)}</span></div>{selection.map((picked, i) => <div className={`selection-row ${i === 0 ? "best" : ""}`} key={picked.mon.id}><span className={`rank rank-${i + 1}`}>{i + 1}</span><MonsterTile mon={picked.mon} index={i} compact /><p>{picked.advantages.length ? picked.advantages.join("・") : "総合力と役割の安定性"}<small>{i === 0 ? "中心に選びたい" : "相手に応じて活躍"}</small></p></div>)}<p className="reason-card"><span>?</span><strong>選出理由</strong>相手への有効打と受け先を両立し、苦手な相手が重なりにくい3体を優先した。</p></section>
@@ -367,12 +408,12 @@ function AdminPanel({ entries, category, setCategory, onEdit, onDelete }: { entr
   </section>;
 }
 
-function SettingsPanel({ state, visibleRole, style, setStyle, mode, onSave, onDelete }: { state: AppState; visibleRole: "admin" | "user"; style: PlayStyle; setStyle: (s: PlayStyle) => void; mode: "live" | "demo"; onSave: (payload: Record<string, unknown>) => void; onDelete: () => void }) {
+function SettingsPanel({ state, visibleRole, format, style, mode, onSave, onDelete }: { state: AppState; visibleRole: "admin" | "user"; format: BattleFormat; style: PlayStyle; mode: "live" | "demo"; onSave: (payload: Record<string, unknown>) => void; onDelete: () => void }) {
   const [name, setName] = useState(state.user.displayName);
   const [confirmDelete, setConfirmDelete] = useState(false);
   return <section><PageTitle eyebrow="ACCOUNT" title="アカウント設定" copy="表示名と、標準で使う戦い方を変更できる。" />
-    <div className="settings-grid"><section className="panel settings-card"><div className="settings-heading"><h2>プロフィール</h2><span className={`role-status ${visibleRole}`}>{visibleRole === "admin" ? "管理者アカウント" : "一般アカウント"}</span></div><label>表示名<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={`@${state.user.handle}`} disabled /></label><label>メールアドレス<input value={state.user.email} disabled /></label><button className="form-primary" onClick={() => onSave({ displayName: name, preferredStyle: style })}>変更を保存</button></section>
-      <section className="panel settings-card"><h2>好みの戦い方</h2><p>構築提案で最初に表示する方針。</p><div className="setting-style-list">{(Object.keys(styleInfo) as PlayStyle[]).map((key) => <button key={key} className={style === key ? "selected" : ""} onClick={() => setStyle(key)}><span>{style === key ? "✓" : ""}</span><strong>{styleInfo[key].name}</strong><small>{styleInfo[key].copy}</small></button>)}</div></section>
+    <div className="settings-grid"><section className="panel settings-card"><div className="settings-heading"><h2>プロフィール</h2><span className={`role-status ${visibleRole}`}>{visibleRole === "admin" ? "管理者アカウント" : "一般アカウント"}</span></div><label>表示名<input value={name} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={`@${state.user.handle}`} disabled /></label><label>メールアドレス<input value={state.user.email} disabled /></label><button className="form-primary" onClick={() => onSave({ displayName: name })}>変更を保存</button></section>
+      <section className="panel settings-card"><h2>対戦設定</h2><p>現在の設定。画面上部から変更すると、パーティー構築と対戦ナビへすぐに反映される。</p><div className="setting-summary"><span>対戦形式<strong>{format === "single" ? "シングル" : "ダブル"}</strong></span><span>好みの戦い方<strong>{styleInfo[style].name}</strong></span></div></section>
       <section className="panel danger-zone"><h2>ログアウト・削除</h2><p>ログアウトしても登録データは残る。アカウント削除は手持ちと持ち物を含む全データを削除する。</p>{mode === "live" ? <><a href="/signout-with-chatgpt?return_to=%2F">ログアウト</a>{confirmDelete ? <button className="danger-button" onClick={onDelete}>本当に削除する</button> : <button className="danger-link" onClick={() => setConfirmDelete(true)}>アカウントを削除</button>}</> : <Link href="/">体験版を終了</Link>}</section>
     </div>
   </section>;
