@@ -28,7 +28,7 @@ export const authIdentities = sqliteTable("auth_identities", {
 export const masterData = sqliteTable("master_data", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   category: text("category", {
-    enum: ["pokemon", "item", "ability", "move", "nature"],
+    enum: ["pokemon", "item", "ability", "move", "nature", "type", "form", "regulation"],
   }).notNull(),
   name: text("name").notNull(),
   type: text("type").notNull().default(""),
@@ -41,6 +41,29 @@ export const masterData = sqliteTable("master_data", {
   index("master_category_idx").on(table.category),
 ]);
 
+export const masterRelations = sqliteTable("master_relations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sourceId: integer("source_id").notNull().references(() => masterData.id, { onDelete: "cascade" }),
+  targetId: integer("target_id").notNull().references(() => masterData.id, { onDelete: "cascade" }),
+  kind: text("kind", {
+    enum: [
+      "learns_move",
+      "has_ability",
+      "form_of",
+      "type_effectiveness",
+      "allows_pokemon",
+      "allows_item",
+      "allows_form",
+    ],
+  }).notNull(),
+  data: text("data").notNull().default("{}"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("master_relation_unique_idx").on(table.sourceId, table.targetId, table.kind),
+  index("master_relation_source_idx").on(table.sourceId),
+  index("master_relation_target_idx").on(table.targetId),
+]);
+
 export const roster = sqliteTable("roster", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -50,6 +73,7 @@ export const roster = sqliteTable("roster", {
   ability: text("ability").notNull().default(""),
   heldItem: text("held_item").notNull().default(""),
   nature: text("nature").notNull().default(""),
+  form: text("form").notNull().default(""),
   megaEvolution: integer("mega_evolution", { mode: "boolean" }).notNull().default(false),
   moves: text("moves").notNull().default("[]"),
   stats: text("stats").notNull().default("{}"),
