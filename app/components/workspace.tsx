@@ -9,9 +9,9 @@ type Tab = "home" | "roster" | "items" | "build" | "battle" | "settings";
 
 const tabMeta: { id: Tab; label: string; icon: string }[] = [
   { id: "home", label: "ホーム", icon: "⌂" },
-  { id: "roster", label: "手持ち", icon: "◈" },
+  { id: "roster", label: "ボックス", icon: "◈" },
   { id: "items", label: "持ち物", icon: "▣" },
-  { id: "build", label: "パーティー構築", icon: "◇" },
+  { id: "build", label: "バトルチーム構築", icon: "◇" },
   { id: "battle", label: "対戦ナビ", icon: "◎" },
   { id: "settings", label: "アカウント", icon: "○" },
 ];
@@ -44,14 +44,21 @@ function createSuggestions(roster: RosterEntry[], format: BattleFormat) {
     const sorted = [...roster].sort((a, b) => scoreFor(b) - scoreFor(a));
     const picked: RosterEntry[] = [];
     const usedTypes = new Set<string>();
+    const usedSpecies = new Set<string>();
     for (const mon of sorted) {
+      if (usedSpecies.has(mon.species)) continue;
       const newTypes = mon.types.split(/[・/]/).filter((t) => t && !usedTypes.has(t));
       if (picked.length < 6 && (newTypes.length || picked.length >= 4)) {
         picked.push(mon);
+        usedSpecies.add(mon.species);
         mon.types.split(/[・/]/).forEach((t) => usedTypes.add(t));
       }
     }
-    for (const mon of sorted) if (picked.length < 6 && !picked.includes(mon)) picked.push(mon);
+    for (const mon of sorted) {
+      if (picked.length >= 6 || usedSpecies.has(mon.species)) continue;
+      picked.push(mon);
+      usedSpecies.add(mon.species);
+    }
     const avg = picked.length ? Math.round(picked.reduce((sum, mon) => sum + scoreFor(mon), 0) / picked.length) : 0;
     return { ...variant, members: picked.slice(0, 6), score: Math.min(99, Math.round(avg / 1.4)), reason: reasonFor(variant.profile, format, picked) };
   });
@@ -69,25 +76,17 @@ function activeRegulation(state: AppState) {
 
 function eligibleRoster(state: AppState) {
   const regulation = activeRegulation(state);
-  const uniqueSpecies = (entries: RosterEntry[]) => {
-    const seen = new Set<string>();
-    return entries.filter((mon) => {
-      if (seen.has(mon.species)) return false;
-      seen.add(mon.species);
-      return true;
-    });
-  };
-  if (!regulation) return uniqueSpecies(state.roster);
+  if (!regulation) return state.roster;
   const allowedPokemonIds = state.masterRelations
     .filter((relation) => relation.sourceId === regulation.id && relation.kind === "allows_pokemon")
     .map((relation) => relation.targetId);
   const allowedFormIds = state.masterRelations
     .filter((relation) => relation.sourceId === regulation.id && relation.kind === "allows_form")
     .map((relation) => relation.targetId);
-  if (!allowedPokemonIds.length && !allowedFormIds.length) return uniqueSpecies(state.roster);
+  if (!allowedPokemonIds.length && !allowedFormIds.length) return state.roster;
   const allowedPokemonNames = new Set(state.master.filter((entry) => allowedPokemonIds.includes(entry.id)).map((entry) => entry.name));
   const allowedFormNames = new Set(state.master.filter((entry) => allowedFormIds.includes(entry.id)).map((entry) => entry.name));
-  return uniqueSpecies(state.roster.filter((mon) => allowedPokemonNames.has(mon.species) && (!mon.form || allowedFormNames.has(mon.form))));
+  return state.roster.filter((mon) => allowedPokemonNames.has(mon.species) && (!mon.form || allowedFormNames.has(mon.form)));
 }
 
 function regulationPickCount(state: AppState, format: BattleFormat) {
@@ -226,7 +225,7 @@ function createAcquisitionAdvice(
     label: "NEXT ITEMS",
     title: missingItems.length ? `「${missingItems[0]}」の取得を優先` : "持ち物の選択肢を増やす",
     copy: missingItems.length
-      ? "現在のパーティーには、この役割を支える持ち物の在庫がない。先に確保すると構築候補を切り替えやすくなる。"
+      ? "現在のバトルチームには、この役割を支える持ち物の在庫がない。先に確保すると構築候補を切り替えやすくなる。"
       : "主要な役割向けの持ち物は確保できている。重複しにくい別の役割向け持ち物を増やすと対応力が上がる。",
     points: [
       physicalCount >= specialCount ? "物理アタッカーの火力を伸ばす持ち物" : "特殊アタッカーの火力を伸ばす持ち物",
@@ -565,7 +564,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
         )}
       </section>
 
-      {rosterEditor && <RosterModal value={rosterEditor} roster={state.roster} master={state.master} masterRelations={state.masterRelations} onClose={() => setRosterEditor(null)} onSave={async (value) => {
+      {rosterEditor && <RosterModal value={rosterEditor} master={state.master} masterRelations={state.masterRelations} onClose={() => setRosterEditor(null)} onSave={async (value) => {
         const ok = await mutate("save-roster", value as unknown as Record<string, unknown>, { optimistic: () => setState((s) => ({ ...s, roster: value.id ? s.roster.map((m) => m.id === value.id ? value : m) : [...s.roster, { ...value, id: Math.max(0, ...s.roster.map((m) => m.id)) + 1 }] })) });
         if (ok) setRosterEditor(null);
       }} />}
@@ -573,7 +572,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
         const ok = await mutate("save-item", value as unknown as Record<string, unknown>, { optimistic: () => setState((s) => ({ ...s, items: value.id ? s.items.map((i) => i.id === value.id ? value : i) : [...s.items, { ...value, id: Math.max(0, ...s.items.map((i) => i.id)) + 1 }] })) });
         if (ok) setItemEditor(null);
       }} />}
-      {tab === "roster" && <button className="floating-add" onClick={() => setRosterEditor(emptyRoster())}>＋ ポケモンを登録</button>}
+      {tab === "roster" && <button className="floating-add" onClick={() => setRosterEditor(emptyRoster())}>＋ ボックスに登録</button>}
       {tab === "items" && <button className="floating-add" onClick={() => setItemEditor({ id: 0, name: "", quantity: 1, notes: "" })}>＋ 持ち物を登録</button>}
     </main>
   );
@@ -590,8 +589,8 @@ function Dashboard({ state, onGo, suggestions }: { state: AppState; onGo: (tab: 
       </section>
       <section className="next-step-card">
         <span className="big-step">01</span>
-        <div><small>NEXT STEP</small><h2>{state.roster.length < 6 ? "まずは手持ちを6体登録しよう" : "構築候補を比べよう"}</h2><p>{state.roster.length < 6 ? "分からない項目は空欄でもよい。ポケモン名から少しずつ登録できる。" : "能力値とタイプの評価軸が異なる3案を用意した。理由を見比べて選べる。"}</p></div>
-        <button onClick={() => onGo(state.roster.length < 6 ? "roster" : "build")}>{state.roster.length < 6 ? "手持ちを登録" : "構築を見る"} <span>→</span></button>
+        <div><small>NEXT STEP</small><h2>{new Set(state.roster.map((mon) => mon.species)).size < 6 ? "ボックスに異なるポケモンを6体登録しよう" : "バトルチーム候補を比べよう"}</h2><p>{new Set(state.roster.map((mon) => mon.species)).size < 6 ? "同じポケモンを複数登録できる。バトルチームには異なるポケモンが6体必要である。" : "能力値とタイプの評価軸が異なる3案を用意した。理由を見比べて選べる。"}</p></div>
+        <button onClick={() => onGo(new Set(state.roster.map((mon) => mon.species)).size < 6 ? "roster" : "build")}>{new Set(state.roster.map((mon) => mon.species)).size < 6 ? "ボックスに登録" : "構築を見る"} <span>→</span></button>
       </section>
       <div className="dashboard-grid">
         <section className="panel party-summary">
@@ -617,9 +616,9 @@ function MonsterTile({ mon, index, compact = false }: { mon: RosterEntry; index:
 }
 
 function RosterPanel({ roster, onEdit, onDelete }: { roster: RosterEntry[]; onEdit: (m: RosterEntry) => void; onDelete: (id: number) => void }) {
-  return <section><PageTitle eyebrow="MY ROSTER" title="手持ちポケモン" copy="分かる項目だけで登録可能。あとからいつでも詳しくできる。" count={`${roster.length}体`} />
+  return <section><PageTitle eyebrow="BOX" title="ボックス" copy="同じポケモンも複数登録できる。あとからいつでも詳しくできる。" count={`${roster.length}体`} />
     <div className="roster-grid">{roster.map((mon, i) => <article className="roster-card" key={mon.id}><MonsterTile mon={mon} index={i} /><div className="chip-row"><span>{mon.ability || "特性未登録"}</span><span>{mon.heldItem || "持ち物なし"}</span><span>{mon.nature || "性格未登録"}</span></div><div className="move-list">{mon.moves.filter(Boolean).map((move) => <span key={move}>{move}</span>)}</div><div className="card-actions"><button onClick={() => onEdit(mon)}>編集</button><button className="danger-link" onClick={() => onDelete(mon.id)}>削除</button></div></article>)}</div>
-    {!roster.length && <EmptyState title="まだ手持ちが登録されていない" copy="右下の「ポケモンを登録」から、名前だけでも追加できる。" />}</section>;
+    {!roster.length && <EmptyState title="ボックスにポケモンがいない" copy="右下の「ボックスに登録」から、名前だけでも追加できる。" />}</section>;
 }
 
 function ItemsPanel({ items, onEdit, onDelete }: { items: OwnedItem[]; onEdit: (i: OwnedItem) => void; onDelete: (id: number) => void }) {
@@ -629,23 +628,24 @@ function ItemsPanel({ items, onEdit, onDelete }: { items: OwnedItem[]; onEdit: (
 }
 
 function BuildPanel({ roster, items, master, masterRelations, format, pickCount, suggestions, selected, setSelected, onRoster }: { roster: RosterEntry[]; items: OwnedItem[]; master: MasterEntry[]; masterRelations: AppState["masterRelations"]; format: BattleFormat; pickCount: number; suggestions: ReturnType<typeof createSuggestions>; selected: number; setSelected: (v: number) => void; onRoster: () => void }) {
-  const ready = roster.length >= 6;
+  const uniqueSpeciesCount = new Set(roster.map((mon) => mon.species)).size;
+  const ready = uniqueSpeciesCount >= 6;
   const acquisitionAdvice = suggestions[selected]
     ? createAcquisitionAdvice(suggestions[selected].members, items, master, masterRelations, format)
     : [];
   return <section>
     <PageTitle
-      eyebrow="PARTY BUILDER"
-      title="パーティー構築"
-      copy={ready ? "上部で選んだ対戦形式に合わせて3案を提案する。構築候補を1つ選ぶと、対戦ナビはその6体から選出する。" : "上部の対戦形式に合わせ、手持ちが6体そろったら構築を提案する。"}
+      eyebrow="BATTLE TEAM BUILDER"
+      title="バトルチーム構築"
+      copy={ready ? "上部で選んだ対戦形式に合わせて3案を提案する。同じポケモンを含まない6体から、対戦ナビの選出を行う。" : "上部の対戦形式に合わせ、ボックスに異なるポケモンが6体そろったら構築を提案する。"}
       count={format === "single" ? "シングル" : "ダブル"}
     />
     {!ready ? (
-      <EmptyState title={`あと${6 - roster.length}体登録すると提案できる`} copy="対戦形式は画面上部からいつでも変更できる。技やステータスは後からでもよい。" action="手持ちを登録" onAction={onRoster} />
+      <EmptyState title={`あと${6 - uniqueSpeciesCount}種類登録すると提案できる`} copy="同じポケモンはボックスに複数登録できるが、バトルチームには1体しか入れられない。" action="ボックスに登録" onAction={onRoster} />
     ) : (
       <>
         <div className="suggestion-tabs">{suggestions.map((s, i) => <button key={`${s.title}-${i}`} className={selected === i ? "active" : ""} onClick={() => setSelected(i)}><small>PLAN {String(i + 1).padStart(2, "0")}</small><strong>{s.title}</strong><span>{s.tone}</span><b>{s.score}<em>/100</em></b></button>)}</div>
-        {suggestions[selected] && <article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "現在の構築候補" : "別の構築候補"}</span><h2>{suggestions[selected].title}パーティー</h2></div><p><span>?</span><strong>この提案の理由</strong>{suggestions[selected].reason}</p></div><div className="suggested-party">{suggestions[selected].members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><section className="acquisition-advice"><header><small>HOW TO IMPROVE</small><h2>次に取得すると強くなるもの</h2><p>この構築候補の弱点・タイプ範囲・能力値・持ち物在庫から、次の一手を提案する。</p></header><div>{acquisitionAdvice.map((advice) => <article key={advice.label}><small>{advice.label}</small><h3>{advice.title}</h3><p>{advice.copy}</p><ul>{advice.points.map((point) => <li key={point}>{point}</li>)}</ul></article>)}</div></section><div className="beginner-explain"><strong>使い方の目安</strong><span>① 相手の6体を見る</span><span>② 対戦ナビで{pickCount}体を選ぶ</span><span>③ 相手の先発に応じた順位を見る</span><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>この構築候補を使う ✓</button></div></article>}
+        {suggestions[selected] && <article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "現在のバトルチーム候補" : "別のバトルチーム候補"}</span><h2>{suggestions[selected].title}バトルチーム</h2></div><p><span>?</span><strong>この提案の理由</strong>{suggestions[selected].reason}</p></div><div className="suggested-party">{suggestions[selected].members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><section className="acquisition-advice"><header><small>HOW TO IMPROVE</small><h2>次に取得すると強くなるもの</h2><p>この構築候補の弱点・タイプ範囲・能力値・持ち物在庫から、次の一手を提案する。</p></header><div>{acquisitionAdvice.map((advice) => <article key={advice.label}><small>{advice.label}</small><h3>{advice.title}</h3><p>{advice.copy}</p><ul>{advice.points.map((point) => <li key={point}>{point}</li>)}</ul></article>)}</div></section><div className="beginner-explain"><strong>使い方の目安</strong><span>① 相手の6体を見る</span><span>② 対戦ナビで{pickCount}体を選ぶ</span><span>③ 相手の先発に応じた順位を見る</span><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>このバトルチーム候補を使う ✓</button></div></article>}
       </>
     )}
   </section>;
@@ -653,10 +653,10 @@ function BuildPanel({ roster, items, master, masterRelations, format, pickCount,
 
 function BattlePanel({ format, pickCount, opponents, setOpponents, selection, enemyLead, setEnemyLead, lead, onRoster }: { format: BattleFormat; pickCount: number; opponents: string[]; setOpponents: (v: string[]) => void; selection: ReturnType<typeof chooseBattleTeam>; enemyLead: string; setEnemyLead: (v: string) => void; lead?: ReturnType<typeof recommendAgainstLead>; onRoster: () => void }) {
   const settingLabel = format === "single" ? "シングル" : "ダブル";
-  if (!selection.length) return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手の情報から、選出と先発を順番に提案する。" count={settingLabel} /><EmptyState title="まず手持ちを登録しよう" copy="選べるポケモンがないため、まだ提案を作れない。" action="手持ちを登録" onAction={onRoster} /></section>;
-  return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手パーティーのポケモン名を入力すると、ポケモン図鑑マスターのタイプと自分の6体のタイプ・ステータスだけで選出を提案する。" count={settingLabel} />
+  if (!selection.length) return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手の情報から、選出と先発を順番に提案する。" count={settingLabel} /><EmptyState title="まずボックスに登録しよう" copy="バトルチーム候補がないため、まだ提案を作れない。" action="ボックスに登録" onAction={onRoster} /></section>;
+  return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手バトルチームのポケモン名を入力すると、ポケモン図鑑マスターのタイプと自分の6体のタイプ・ステータスだけで選出を提案する。" count={settingLabel} />
     <div className="battle-flow"><span className="done">1<small>相手の6体</small></span><i></i><span className="done">2<small>{pickCount}体を選出</small></span><i></i><span>3<small>先発を決定</small></span></div>
-    <div className="battle-layout"><section className="panel opponent-panel"><div className="panel-head"><div><small>OPPONENT PARTY</small><h2>相手ポケモン6体</h2></div><span>名前だけ入力</span></div><p className="field-hint">タイプはポケモン図鑑マスターから自動で照合する。メガ進化が判明した場合は「メガ◯◯」を入力する。</p><div className="opponent-grid">{opponents.map((value, i) => <label key={i}><span>{i + 1}</span><input value={value} onChange={(e) => { const next = [...opponents]; next[i] = e.target.value; setOpponents(next); }} placeholder="ポケモン名" /></label>)}</div></section>
+    <div className="battle-layout"><section className="panel opponent-panel"><div className="panel-head"><div><small>OPPONENT BATTLE TEAM</small><h2>相手バトルチーム6体</h2></div><span>名前だけ入力</span></div><p className="field-hint">タイプはポケモン図鑑マスターから自動で照合する。メガ進化が判明した場合は「メガ◯◯」を入力する。</p><div className="opponent-grid">{opponents.map((value, i) => <label key={i}><span>{i + 1}</span><input value={value} onChange={(e) => { const next = [...opponents]; next[i] = e.target.value; setOpponents(next); }} placeholder="ポケモン名" /></label>)}</div></section>
       <section className="panel selection-panel"><div className="panel-head"><div><small>RECOMMENDED PICK</small><h2>この{pickCount}体がおすすめ</h2></div><span className="score-ring small">{Math.min(99, 78 + selection[0].advantages.length * 4)}</span></div>{selection.map((picked, i) => <div className={`selection-row ${i === 0 ? "best" : ""}`} key={picked.mon.id}><span className={`rank rank-${i + 1}`}>{i + 1}</span><MonsterTile mon={picked.mon} index={i} compact /><p>{picked.advantages.length ? picked.advantages.join("・") : "総合力と役割の安定性"}<small>{i === 0 ? "中心に選びたい" : "相手に応じて活躍"}</small></p></div>)}<p className="reason-card"><span>?</span><strong>選出理由</strong>相手への有効打と受け先を両立し、苦手な相手が重なりにくい{pickCount}体を優先した。</p></section>
     </div>
     <section className="lead-panel"><div><small>STEP 03 / RESPONSE</small><h2>相手が最初に出したポケモンは？</h2><p>選出済みの{pickCount}体を、相手ポケモンのタイプへの有利さとステータスで全順位表示する。</p></div><input value={enemyLead} onChange={(e) => setEnemyLead(e.target.value)} placeholder="相手が出したポケモン名" />{lead && <div className="lead-result lead-ranking">{lead.map((ranked, i) => <div className="selection-row" key={ranked.mon.id}><span className={`rank rank-${i + 1}`}>{i + 1}</span><MonsterTile mon={ranked.mon} index={i} compact /><p><strong>{i === 0 ? "最もおすすめ" : "次の候補"}</strong>{ranked.reasons.length ? ranked.reasons.join("・") : "タイプ相性とステータスを総合評価"}</p></div>)}</div>}{enemyLead && !lead && <p className="lead-unavailable">ポケモン図鑑マスターにある名称で入力すると、タイプ相性を評価できる。</p>}</section>
@@ -715,8 +715,8 @@ function SettingsPanel({ state, visibleRole, format, mode, onSave, onDelete }: {
 
   return <section><PageTitle eyebrow="ACCOUNT" title="アカウント設定" copy="表示名、ユーザー名と対戦形式を確認・変更できる。" />
     <div className="settings-grid"><section className="panel settings-card"><div className="settings-heading"><h2>プロフィール</h2><span className={`role-status ${visibleRole}`}>{visibleRole === "admin" ? "管理者アカウント" : "一般アカウント"}</span></div><label>表示名<input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={handle} maxLength={24} onChange={(e) => { setHandle(e.target.value.replace(/^@/, "").toLowerCase()); setHandleStatus("checking"); }} autoCapitalize="none" aria-describedby="handle-availability" /><small id="handle-availability" className={`field-hint handle-${effectiveHandleStatus}`} aria-live="polite">{handleMessage}</small></label><label>メールアドレス<input type="email" value={state.user.email} disabled /><small className="field-hint">ChatGPTアカウントから取得するため、このサービス内では変更できない。</small></label><button className="form-primary" disabled={!name.trim() || effectiveHandleStatus !== "available"} onClick={() => onSave({ displayName: name, handle })}>変更を保存</button></section>
-      <section className="panel settings-card"><h2>対戦設定</h2><p>現在の設定。画面上部から変更すると、パーティー構築と対戦ナビへすぐに反映される。</p><div className="setting-summary"><span>対戦形式<strong>{format === "single" ? "シングル" : "ダブル"}</strong></span></div></section>
-      <section className="panel danger-zone"><h2>ログアウト・削除</h2><p>ログアウトしても登録データは残る。アカウント削除は手持ちと持ち物を含む全データを削除する。</p>{mode === "live" ? <><a href="/signout-with-chatgpt?return_to=%2F">ログアウト</a>{confirmDelete ? <button className="danger-button" onClick={onDelete}>本当に削除する</button> : <button className="danger-link" onClick={() => setConfirmDelete(true)}>アカウントを削除</button>}</> : <Link href="/">体験版を終了</Link>}</section>
+      <section className="panel settings-card"><h2>対戦設定</h2><p>現在の設定。画面上部から変更すると、バトルチーム構築と対戦ナビへすぐに反映される。</p><div className="setting-summary"><span>対戦形式<strong>{format === "single" ? "シングル" : "ダブル"}</strong></span></div></section>
+      <section className="panel danger-zone"><h2>ログアウト・削除</h2><p>ログアウトしても登録データは残る。アカウント削除はボックスと持ち物を含む全データを削除する。</p>{mode === "live" ? <><a href="/signout-with-chatgpt?return_to=%2F">ログアウト</a>{confirmDelete ? <button className="danger-button" onClick={onDelete}>本当に削除する</button> : <button className="danger-link" onClick={() => setConfirmDelete(true)}>アカウントを削除</button>}</> : <Link href="/">体験版を終了</Link>}</section>
     </div>
   </section>;
 }
@@ -726,14 +726,12 @@ function PageTitle({ eyebrow, title, copy, count }: { eyebrow: string; title: st
 }
 function EmptyState({ title, copy, action, onAction }: { title: string; copy: string; action?: string; onAction?: () => void }) { return <div className="empty-state"><span>◇</span><h2>{title}</h2><p>{copy}</p>{action && <button onClick={onAction}>{action} →</button>}</div>; }
 
-function RosterModal({ value, roster, master, masterRelations, onClose, onSave }: { value: RosterEntry; roster: RosterEntry[]; master: MasterEntry[]; masterRelations: AppState["masterRelations"]; onClose: () => void; onSave: (v: RosterEntry) => Promise<void> }) {
+function RosterModal({ value, master, masterRelations, onClose, onSave }: { value: RosterEntry; master: MasterEntry[]; masterRelations: AppState["masterRelations"]; onClose: () => void; onSave: (v: RosterEntry) => Promise<void> }) {
   const [draft, setDraft] = useState({ ...value, moves: [...value.moves], stats: { ...value.stats } });
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
   const update = (key: keyof RosterEntry, val: unknown) => setDraft((d) => ({ ...d, [key]: val }));
   const pokemon = master.filter((entry) => entry.category === "pokemon");
-  const registeredSpecies = new Set(roster.filter((mon) => mon.id !== draft.id).map((mon) => mon.species));
-  const duplicateSpecies = registeredSpecies.has(draft.species);
   const selectedPokemon = pokemon.find((entry) => entry.name === draft.species);
   const linkedAbilityIds = selectedPokemon
     ? masterRelations.filter((relation) => relation.sourceId === selectedPokemon.id && relation.kind === "has_ability").map((relation) => relation.targetId)
@@ -761,12 +759,12 @@ function RosterModal({ value, roster, master, masterRelations, onClose, onSave }
     try { await onSave(draft); }
     finally { saveLock.current = false; setSaving(false); }
   };
-  return <Modal title={draft.id ? "ポケモンを編集" : "ポケモンを登録"} subtitle="マスターデータから選択して対戦情報を登録する" onClose={onClose}>
-    <div className="form-grid"><label className="wide">ポケモン *<select value={draft.species} onChange={(e) => { const selected = pokemon.find((entry) => entry.name === e.target.value); const stats = selected?.data?.stats as Stats | undefined; setDraft((current) => ({ ...current, species: e.target.value, types: selected?.type ?? "", ability: "", form: "", megaEvolution: false, moves: ["", "", "", ""], stats: stats ? { ...stats } : current.stats })); }}><option value="">選択する</option>{legacyOption(draft.species, pokemon)}{pokemon.map((entry) => <option key={entry.id} value={entry.name} disabled={registeredSpecies.has(entry.name)}>{entry.name}{registeredSpecies.has(entry.name) ? "（登録済み）" : entry.type ? `（${entry.type}）` : ""}</option>)}</select>{duplicateSpecies && <small className="field-hint">同じポケモンは1体までである。別のポケモンを選択する。</small>}</label><label>ニックネーム<input value={draft.nickname} onChange={(e) => update("nickname", e.target.value)} /></label><label>タイプ<input value={draft.types || "ポケモンのマスター情報から設定"} disabled /></label><label>特性<select value={draft.ability} onChange={(e) => update("ability", e.target.value)}><option value="">未設定</option>{legacyOption(draft.ability, abilities)}{abilities.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>持ち物<select value={draft.heldItem} onChange={(e) => update("heldItem", e.target.value)}><option value="">なし・未設定</option>{legacyOption(draft.heldItem, items)}{items.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>性格<select value={draft.nature} onChange={(e) => update("nature", e.target.value)}><option value="">未設定</option>{legacyOption(draft.nature, natures)}{natures.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>フォルム・Mega<select value={draft.form} onChange={(e) => { const selected = forms.find((entry) => entry.name === e.target.value); const stats = selected?.data?.stats as Stats | undefined; setDraft((current) => ({ ...current, form: e.target.value, types: selected?.type || selectedPokemon?.type || "", megaEvolution: Boolean(selected?.data?.mega), stats: stats ? { ...stats } : current.stats })); }}><option value="">通常フォルム</option>{legacyOption(draft.form, forms)}{forms.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}{entry.data?.mega ? "（Mega）" : ""}</option>)}</select></label><label className="toggle-field"><input type="checkbox" checked={draft.megaEvolution} disabled /><span><strong>{draft.megaEvolution ? "Mega Evolutionを使用" : "通常フォルム"}</strong><small>フォルムのマスターデータから自動判定する</small></span></label>
+  return <Modal title={draft.id ? "ポケモンを編集" : "ボックスにポケモンを登録"} subtitle="マスターデータから選択して対戦情報を登録する" onClose={onClose}>
+    <div className="form-grid"><label className="wide">ポケモン *<select value={draft.species} onChange={(e) => { const selected = pokemon.find((entry) => entry.name === e.target.value); const stats = selected?.data?.stats as Stats | undefined; setDraft((current) => ({ ...current, species: e.target.value, types: selected?.type ?? "", ability: "", form: "", megaEvolution: false, moves: ["", "", "", ""], stats: stats ? { ...stats } : current.stats })); }}><option value="">選択する</option>{legacyOption(draft.species, pokemon)}{pokemon.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}{entry.type ? `（${entry.type}）` : ""}</option>)}</select><small className="field-hint">同じポケモンも複数登録できる。バトルチーム構築時には同じポケモンを重複させない。</small></label><label>ニックネーム<input value={draft.nickname} onChange={(e) => update("nickname", e.target.value)} /></label><label>タイプ<input value={draft.types || "ポケモンのマスター情報から設定"} disabled /></label><label>特性<select value={draft.ability} onChange={(e) => update("ability", e.target.value)}><option value="">未設定</option>{legacyOption(draft.ability, abilities)}{abilities.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>持ち物<select value={draft.heldItem} onChange={(e) => update("heldItem", e.target.value)}><option value="">なし・未設定</option>{legacyOption(draft.heldItem, items)}{items.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>性格<select value={draft.nature} onChange={(e) => update("nature", e.target.value)}><option value="">未設定</option>{legacyOption(draft.nature, natures)}{natures.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>フォルム・Mega<select value={draft.form} onChange={(e) => { const selected = forms.find((entry) => entry.name === e.target.value); const stats = selected?.data?.stats as Stats | undefined; setDraft((current) => ({ ...current, form: e.target.value, types: selected?.type || selectedPokemon?.type || "", megaEvolution: Boolean(selected?.data?.mega), stats: stats ? { ...stats } : current.stats })); }}><option value="">通常フォルム</option>{legacyOption(draft.form, forms)}{forms.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}{entry.data?.mega ? "（Mega）" : ""}</option>)}</select></label><label className="toggle-field"><input type="checkbox" checked={draft.megaEvolution} disabled /><span><strong>{draft.megaEvolution ? "Mega Evolutionを使用" : "通常フォルム"}</strong><small>フォルムのマスターデータから自動判定する</small></span></label>
       <fieldset className="wide"><legend>技（最大4つ）</legend><div className="move-input-grid">{[0,1,2,3].map((i) => <select key={i} value={draft.moves[i] ?? ""} onChange={(e) => { const nextMoves = [...draft.moves]; nextMoves[i] = e.target.value; update("moves", nextMoves); }}><option value="">技 {i + 1}：未設定</option>{legacyOption(draft.moves[i] ?? "", moves)}{moves.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select>)}</div></fieldset>
       <fieldset className="wide"><legend>種族値・ステータス目安</legend><div className="stat-input-grid">{([["hp","HP"],["attack","攻撃"],["defense","防御"],["spAttack","特攻"],["spDefense","特防"],["speed","素早さ"]] as [keyof Stats,string][]).map(([key,label]) => <label key={key}>{label}<input type="number" min="1" max="255" value={draft.stats[key]} onChange={(e) => update("stats", { ...draft.stats, [key]: Number(e.target.value) })} /></label>)}</div></fieldset>
       <label className="wide">メモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} placeholder="使い方や注意点を記録" /></label>
-    </div><div className="modal-actions"><button onClick={onClose} disabled={saving}>キャンセル</button><button className="form-primary" disabled={saving || !draft.species.trim() || duplicateSpecies} onClick={() => void save()}>{saving ? "保存中…" : "保存する"}</button></div>
+    </div><div className="modal-actions"><button onClick={onClose} disabled={saving}>キャンセル</button><button className="form-primary" disabled={saving || !draft.species.trim()} onClick={() => void save()}>{saving ? "保存中…" : "保存する"}</button></div>
   </Modal>;
 }
 
