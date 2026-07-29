@@ -4,6 +4,7 @@ import { tsImport } from "tsx/esm/api";
 
 test("Regulation Set M-B catalog includes every battle-distinct form", async () => {
   const catalog = await tsImport("../app/lib/champions-pokemon.ts", import.meta.url);
+  const allPokemon = catalog.championsPokemonMaster;
 
   assert.equal(catalog.championsPokemonCount, 208);
   assert.equal(catalog.championsAlternateFormCount, 34);
@@ -15,4 +16,7 @@ test("Regulation Set M-B catalog includes every battle-distinct form", async () 
       + catalog.championsMegaCount,
     318,
   );
+  assert.equal(allPokemon.length, 318);
+  assert.ok(allPokemon.every((entry) => entry.category === "pokemon"));
+  assert.equal(new Set(allPokemon.map((entry) => entry.name)).size, 318);
 });
