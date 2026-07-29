@@ -337,7 +337,7 @@ const stats = ([hp, attack, defense, spAttack, spDefense, speed]: readonly numbe
   hp, attack, defense, spAttack, spDefense, speed,
 });
 
-export const championsPokemonMaster: MasterEntry[] = pokemonSeeds.map(
+const championsBasePokemonMaster: MasterEntry[] = pokemonSeeds.map(
   ([dexNo, name, type, hp, attack, defense, spAttack, spDefense, speed], index) => ({
     id: 1000 + index,
     category: "pokemon",
@@ -357,10 +357,10 @@ const allFormSeeds = [
   ...alternateFormSeeds.map((entry) => ({ entry, mega: false })),
 ];
 
-export const championsFormMaster: MasterEntry[] = allFormSeeds.map(
+export const championsVariantMaster: MasterEntry[] = allFormSeeds.map(
   ({ entry: [dexNo, baseName, name, type, hp, attack, defense, spAttack, spDefense, speed], mega }, index) => ({
     id: 2000 + index,
-    category: "form",
+    category: "pokemon",
     name,
     type,
     description: `${baseName}の${mega ? "メガシンカ" : "別フォルム"}。`,
@@ -373,6 +373,11 @@ export const championsFormMaster: MasterEntry[] = allFormSeeds.map(
     },
   }),
 );
+
+export const championsPokemonMaster: MasterEntry[] = [
+  ...championsBasePokemonMaster,
+  ...championsVariantMaster,
+];
 
 export const championsPokemonCount = pokemonSeeds.length;
 export const championsMegaCount = megaFormSeeds.length;
