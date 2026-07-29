@@ -368,26 +368,32 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [mobileNav]);
 
-  const mutate = async (action: string, payload: Record<string, unknown>, optimistic?: () => void) => {
+  const mutate = async (
+    action: string,
+    payload: Record<string, unknown>,
+    options?: { optimistic?: () => void; rollback?: () => void; skipRefresh?: boolean; successMessage?: string; failureMessage?: string },
+  ) => {
     setError("");
     if (mode === "demo") {
-      optimistic?.();
+      options?.optimistic?.();
       setNotice("体験版のデータを更新した");
       window.setTimeout(() => setNotice("体験版：変更はこの画面を閉じると消える"), 1800);
       return true;
     }
+    if (options?.skipRefresh) options.optimistic?.();
     try {
       const response = await fetch("/api/state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, payload }) });
       const data = await response.json();
       if (!response.ok) throw new Error(userError);
       if (data.signOut) window.location.href = data.signOut;
-      else await refresh();
-      setNotice("保存した");
+      else if (!options?.skipRefresh) await refresh();
+      setNotice(options?.successMessage ?? "保存した");
       window.setTimeout(() => setNotice(""), 1800);
       return true;
     } catch (e) {
       console.error("Failed to save application state", e);
-      setError(userError);
+      options?.rollback?.();
+      setError(options?.failureMessage ?? userError);
       return false;
     }
   };
@@ -524,21 +530,39 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
         {loading ? <Loading /> : (
           <div className="app-content">
             {tab === "home" && <Dashboard state={state} onGo={setTab} suggestions={suggestions} />}
-            {tab === "roster" && <RosterPanel roster={state.roster} onEdit={setRosterEditor} onDelete={(id) => void mutate("delete-roster", { id }, () => setState((s) => ({ ...s, roster: s.roster.filter((m) => m.id !== id) })))} />}
-            {tab === "items" && <ItemsPanel items={state.items} onEdit={setItemEditor} onDelete={(id) => void mutate("delete-item", { id }, () => setState((s) => ({ ...s, items: s.items.filter((i) => i.id !== id) })))} />}
+            {tab === "roster" && <RosterPanel roster={state.roster} onEdit={setRosterEditor} onDelete={(id) => {
+              const removed = state.roster.find((mon) => mon.id === id);
+              void mutate("delete-roster", { id }, {
+                skipRefresh: true,
+                successMessage: "ポケモンを削除した",
+                failureMessage: "削除できなかった。元に戻した。",
+                optimistic: () => setState((current) => ({ ...current, roster: current.roster.filter((mon) => mon.id !== id) })),
+                rollback: () => { if (removed) setState((current) => current.roster.some((mon) => mon.id === id) ? current : ({ ...current, roster: [...current.roster, removed].sort((a, b) => a.id - b.id) })); },
+              });
+            }} />}
+            {tab === "items" && <ItemsPanel items={state.items} onEdit={setItemEditor} onDelete={(id) => {
+              const removed = state.items.find((item) => item.id === id);
+              void mutate("delete-item", { id }, {
+                skipRefresh: true,
+                successMessage: "持ち物を削除した",
+                failureMessage: "削除できなかった。元に戻した。",
+                optimistic: () => setState((current) => ({ ...current, items: current.items.filter((item) => item.id !== id) })),
+                rollback: () => { if (removed) setState((current) => current.items.some((item) => item.id === id) ? current : ({ ...current, items: [...current.items, removed].sort((a, b) => a.id - b.id) })); },
+              });
+            }} />}
             {tab === "build" && <BuildPanel roster={availableRoster} items={state.items} master={state.master} masterRelations={state.masterRelations} format={format} pickCount={pickCount} suggestions={suggestions} selected={selectedSuggestion} setSelected={setSelectedSuggestion} onRoster={() => setTab("roster")} />}
             {tab === "battle" && <BattlePanel format={format} pickCount={pickCount} opponents={opponents} setOpponents={setOpponents} selection={selection} enemyLead={enemyLead} setEnemyLead={setEnemyLead} lead={lead} onRoster={() => setTab("roster")} />}
-            {tab === "settings" && <SettingsPanel state={state} visibleRole={visibleRole} format={format} mode={mode} onSave={(payload) => void mutate("save-profile", payload, () => setState((s) => ({ ...s, user: { ...s.user, ...payload } })))} onDelete={() => void mutate("delete-account", {}, () => { window.location.href = "/"; })} />}
+            {tab === "settings" && <SettingsPanel state={state} visibleRole={visibleRole} format={format} mode={mode} onSave={(payload) => void mutate("save-profile", payload, { optimistic: () => setState((s) => ({ ...s, user: { ...s.user, ...payload } })) })} onDelete={() => void mutate("delete-account", {}, { optimistic: () => { window.location.href = "/"; } })} />}
           </div>
         )}
       </section>
 
       {rosterEditor && <RosterModal value={rosterEditor} master={state.master} masterRelations={state.masterRelations} onClose={() => setRosterEditor(null)} onSave={async (value) => {
-        const ok = await mutate("save-roster", value as unknown as Record<string, unknown>, () => setState((s) => ({ ...s, roster: value.id ? s.roster.map((m) => m.id === value.id ? value : m) : [...s.roster, { ...value, id: Math.max(0, ...s.roster.map((m) => m.id)) + 1 }] })));
+        const ok = await mutate("save-roster", value as unknown as Record<string, unknown>, { optimistic: () => setState((s) => ({ ...s, roster: value.id ? s.roster.map((m) => m.id === value.id ? value : m) : [...s.roster, { ...value, id: Math.max(0, ...s.roster.map((m) => m.id)) + 1 }] })) });
         if (ok) setRosterEditor(null);
       }} />}
       {itemEditor && <ItemModal value={itemEditor} master={state.master} onClose={() => setItemEditor(null)} onSave={async (value) => {
-        const ok = await mutate("save-item", value as unknown as Record<string, unknown>, () => setState((s) => ({ ...s, items: value.id ? s.items.map((i) => i.id === value.id ? value : i) : [...s.items, { ...value, id: Math.max(0, ...s.items.map((i) => i.id)) + 1 }] })));
+        const ok = await mutate("save-item", value as unknown as Record<string, unknown>, { optimistic: () => setState((s) => ({ ...s, items: value.id ? s.items.map((i) => i.id === value.id ? value : i) : [...s.items, { ...value, id: Math.max(0, ...s.items.map((i) => i.id)) + 1 }] })) });
         if (ok) setItemEditor(null);
       }} />}
       {tab === "roster" && <button className="floating-add" onClick={() => setRosterEditor(emptyRoster())}>＋ ポケモンを登録</button>}
