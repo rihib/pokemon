@@ -54,13 +54,12 @@ export async function POST(request: Request) {
         data: masterData.data,
       }).from(masterData);
       const availableRelations = await db.select().from(masterRelations);
-      const species = String(payload.species ?? "").trim();
+      const species = String(payload.form || payload.species || "").trim();
       const speciesMaster = availableMaster.find((entry) => entry.category === "pokemon" && entry.name === species);
       const id = Number(payload.id) || 0;
       const ability = String(payload.ability ?? "").trim();
       const heldItem = String(payload.heldItem ?? "").trim();
       const nature = String(payload.nature ?? "").trim();
-      const form = String(payload.form ?? "").trim();
       const moves = Array.isArray(payload.moves) ? payload.moves.map(String).map((move) => move.trim()).filter(Boolean).slice(0, 4) : [];
       const existsInMaster = (category: "item" | "ability" | "move" | "nature", name: string) =>
         !name || availableMaster.some((entry) => entry.category === category && entry.name === name);
@@ -79,16 +78,6 @@ export async function POST(request: Request) {
       if (linkedMoveIds.length && moveMasters.some((move) => !move || !linkedMoveIds.includes(move.id))) {
         return Response.json({ error: "このポケモンが使用できる技を選択する必要がある" }, { status: 400 });
       }
-      const formMaster = form
-        ? availableMaster.find((entry) => entry.category === "form" && entry.name === form)
-        : undefined;
-      if (form && (!formMaster || !availableRelations.some((relation) =>
-        relation.sourceId === formMaster.id &&
-        relation.targetId === speciesMaster.id &&
-        relation.kind === "form_of"
-      ))) {
-        return Response.json({ error: "このポケモンに対応するフォルムを選択する必要がある" }, { status: 400 });
-      }
       if (!existsInMaster("ability", ability)) return Response.json({ error: "マスターデータに登録された特性を選択する必要がある" }, { status: 400 });
       if (!existsInMaster("item", heldItem)) return Response.json({ error: "マスターデータに登録された持ち物を選択する必要がある" }, { status: 400 });
       if (!existsInMaster("nature", nature)) return Response.json({ error: "マスターデータに登録された性格を選択する必要がある" }, { status: 400 });
@@ -98,14 +87,12 @@ export async function POST(request: Request) {
         ownerId: auth.profile.id,
         species,
         nickname: String(payload.nickname ?? "").trim(),
-        types: formMaster?.type || speciesMaster.type,
+        types: speciesMaster.type,
         ability,
         heldItem,
         nature,
-        form,
-        megaEvolution: formMaster
-          ? Boolean(safeJson<Record<string, unknown>>(formMaster.data, {}).mega)
-          : Boolean(payload.megaEvolution),
+        form: "",
+        megaEvolution: Boolean(safeJson<Record<string, unknown>>(speciesMaster.data, {}).mega),
         moves: JSON.stringify(moves),
         stats: JSON.stringify(payload.stats ?? {}),
         notes: String(payload.notes ?? "").trim(),
@@ -190,7 +177,7 @@ export async function POST(request: Request) {
         return Response.json({ ok: true });
       }
       const category = String(payload.category);
-      const categories: MasterCategory[] = ["pokemon", "item", "ability", "move", "nature", "type", "form", "regulation"];
+      const categories: MasterCategory[] = ["pokemon", "item", "ability", "move", "nature", "type", "regulation"];
       if (!categories.includes(category as MasterCategory)) {
         return Response.json({ error: "カテゴリが不正である" }, { status: 400 });
       }
@@ -229,7 +216,6 @@ export async function POST(request: Request) {
           "type_effectiveness",
           "allows_pokemon",
           "allows_item",
-          "allows_form",
         ];
         const requestedRelations = payload.relations
           .map((value) => value as Record<string, unknown>)
@@ -248,11 +234,10 @@ export async function POST(request: Request) {
           const expectedRelation: Partial<Record<MasterRelationKind, [MasterCategory, MasterCategory]>> = {
             learns_move: ["pokemon", "move"],
             has_ability: ["pokemon", "ability"],
-            form_of: ["form", "pokemon"],
+            form_of: ["pokemon", "pokemon"],
             type_effectiveness: ["type", "type"],
             allows_pokemon: ["regulation", "pokemon"],
             allows_item: ["regulation", "item"],
-            allows_form: ["regulation", "form"],
           };
           const insertValues = requestedRelations
             .filter((relation) => {
