@@ -29,24 +29,54 @@ function numberScore(mon: RosterEntry) {
 }
 
 type SuggestionProfile = "balanced" | "offense" | "bulk";
+type ScoreBreakdownItem = { label: string; points: number; detail: string; kind: "base" | "bonus" | "penalty" };
+type TeamScoreBreakdown = { score: number; items: ScoreBreakdownItem[] };
 
 function scoreForProfile(mon: RosterEntry, profile: SuggestionProfile) {
   const stats = mon.stats;
   const offense = Math.max(stats.attack, stats.spAttack);
   const bulk = stats.hp * .35 + stats.defense * .325 + stats.spDefense * .325;
-  if (profile === "offense") return offense * .48 + stats.speed * .38 + bulk * .14 + (mon.megaEvolution ? 8 : 0);
-  if (profile === "bulk") return bulk * .55 + offense * .23 + stats.speed * .12 + (mon.megaEvolution ? 8 : 0);
-  return numberScore(mon);
+  if (profile === "offense") return offense * .48 + stats.speed * .38 + bulk * .14;
+  if (profile === "bulk") return bulk * .55 + offense * .23 + stats.speed * .12;
+  return offense * .32 + bulk * .35 + stats.speed * .23;
 }
 
 function teamScore(members: RosterEntry[], profile: SuggestionProfile) {
-  if (!members.length) return 0;
-  const average = members.reduce((sum, mon) => sum + scoreForProfile(mon, profile), 0) / members.length;
-  return Math.min(99, Math.round(average / 1.4));
+  return teamScoreBreakdown(members, profile).score;
 }
 
 function typeCoverage(members: RosterEntry[]) {
   return new Set(members.flatMap((mon) => mon.types.split(/[・/]/).filter(Boolean))).size;
+}
+
+function teamScoreBreakdown(members: RosterEntry[], profile: SuggestionProfile): TeamScoreBreakdown {
+  if (!members.length) return { score: 0, items: [{ label: "メンバー未登録", points: 0, detail: "6体を登録すると評価できる。", kind: "base" }] };
+  const profileCopy: Record<SuggestionProfile, string> = {
+    balanced: "攻撃・耐久・素早さを均等に評価",
+    offense: "攻撃・特攻と素早さを重視",
+    bulk: "HP・防御・特防を重視",
+  };
+  const basePoints = Math.round(members.reduce((sum, mon) => sum + scoreForProfile(mon, profile), 0) / members.length / 1.4);
+  const allTypes = members.flatMap((mon) => mon.types.split(/[・/]/).filter(Boolean));
+  const distinctTypes = new Set(allTypes).size;
+  const typeBonus = Math.max(0, Math.min(10, (distinctTypes - 3) * 2));
+  const duplicateTypes = [...new Set(allTypes)].reduce((sum, type) => sum + Math.max(0, allTypes.filter((entry) => entry === type).length - 1), 0);
+  const duplicatePenalty = Math.min(10, duplicateTypes * 2);
+  const megaBonus = Math.min(8, members.filter((mon) => mon.megaEvolution).length * 4);
+  const incompletePenalty = Math.max(0, 6 - members.length) * 8;
+  const rawScore = basePoints + typeBonus + megaBonus - duplicatePenalty - incompletePenalty;
+  const capPenalty = Math.max(0, rawScore - 99);
+  const floorBonus = Math.max(0, -rawScore);
+  const items: ScoreBreakdownItem[] = [
+    { label: "能力値の基礎点", points: basePoints, detail: profileCopy[profile], kind: "base" },
+    { label: "タイプの幅", points: typeBonus, detail: `${distinctTypes}種類。4種類目から1種類ごとに+2点`, kind: "bonus" },
+    { label: "メガ進化", points: megaBonus, detail: members.some((mon) => mon.megaEvolution) ? `メガ進化 ${members.filter((mon) => mon.megaEvolution).length}体で+4点ずつ` : "メガ進化の採用なし", kind: "bonus" },
+    { label: "タイプの重複", points: -duplicatePenalty, detail: duplicateTypes ? `重複 ${duplicateTypes}件で-2点ずつ` : "重複なし", kind: "penalty" },
+    { label: "メンバー不足", points: -incompletePenalty, detail: members.length === 6 ? "6体そろっている" : `${6 - members.length}体不足で-8点ずつ`, kind: "penalty" },
+  ];
+  if (capPenalty) items.push({ label: "表示上限", points: -capPenalty, detail: "スコアは99点を上限としている", kind: "penalty" });
+  if (floorBonus) items.push({ label: "最低点補正", points: floorBonus, detail: "スコアは0点を下限としている", kind: "bonus" });
+  return { score: rawScore - capPenalty + floorBonus, items };
 }
 
 function pokemonIdentity(mon: RosterEntry, master: MasterEntry[]) {
@@ -685,7 +715,9 @@ function BuildPanel({ roster, items, master, masterRelations, selectedTeam, form
   const acquisitionAdvice = selectedSuggestion
     ? createAcquisitionAdvice(selectedSuggestion.members, items, master, masterRelations, format)
     : [];
-  const currentTeamScore = selectedTeam && selectedSuggestion ? teamScore(selectedTeam.members, selectedSuggestion.profile) : 0;
+  const currentBreakdown = selectedTeam && selectedSuggestion ? teamScoreBreakdown(selectedTeam.members, selectedSuggestion.profile) : undefined;
+  const suggestedBreakdown = selectedSuggestion ? teamScoreBreakdown(selectedSuggestion.members, selectedSuggestion.profile) : undefined;
+  const currentTeamScore = currentBreakdown?.score ?? 0;
   const currentTypeCount = selectedTeam ? typeCoverage(selectedTeam.members) : 0;
   const suggestedTypeCount = selectedSuggestion ? typeCoverage(selectedSuggestion.members) : 0;
   const scoreDifference = currentTeamScore - (selectedSuggestion?.score ?? 0);
@@ -701,10 +733,14 @@ function BuildPanel({ roster, items, master, masterRelations, selectedTeam, form
     ) : (
       <>
         <div className="suggestion-tabs">{suggestions.map((s, i) => <button key={`${s.title}-${i}`} className={selected === i ? "active" : ""} onClick={() => setSelected(i)}><small>PLAN {String(i + 1).padStart(2, "0")}</small><strong>{s.title}</strong><span>{s.tone}</span><b>{s.score}<em>/100</em></b></button>)}</div>
-        {selectedSuggestion && <><section className="team-comparison"><header><div><small>CURRENT MY TEAM</small><h2>{selectedTeam ? selectedTeam.name : "マイチームが未登録"}</h2><p>{selectedTeam ? "選択中のマイチームを、いま選んでいる提案と同じ評価軸で比較する。" : "マイチームを登録すると、提案とのスコア差とタイプの幅を確認できる。"}</p></div>{selectedTeam && <b>{currentTeamScore}<em>/100</em></b>}</header>{selectedTeam && <div><article><small>スコア差</small><strong className={scoreDifference >= 0 ? "positive" : "negative"}>{scoreDifference >= 0 ? "+" : ""}{scoreDifference} pts</strong><span>提案 {selectedSuggestion.score} pts</span></article><article><small>タイプの幅</small><strong>{currentTypeCount} 種類</strong><span>提案 {suggestedTypeCount} 種類</span></article><article><small>メンバー構成</small><strong>{selectedTeam.members.length} / 6</strong><span>提案と見比べて調整</span></article></div>}</section><article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "構築の提案候補" : "別の構築候補"}</span><h2>{selectedSuggestion.title}チーム</h2></div><p><span>?</span><strong>この提案の理由</strong>{selectedSuggestion.reason}</p></div><div className="suggested-party">{selectedSuggestion.members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><section className="acquisition-advice"><header><small>HOW TO IMPROVE</small><h2>次に取得すると強くなるもの</h2><p>この構築候補の弱点・タイプ範囲・能力値・持ち物在庫から、次の一手を提案する。</p></header><div>{acquisitionAdvice.map((advice) => <article key={advice.label}><small>{advice.label}</small><h3>{advice.title}</h3><p>{advice.copy}</p><ul>{advice.points.map((point) => <li key={point}>{point}</li>)}</ul></article>)}</div></section><div className="beginner-explain"><strong>使い方の目安</strong><span>① 提案を構築検討に使う</span><span>② 実際に使う6体は「マイチーム」に登録する</span><span>③ 対戦ナビは登録したマイチームから選出する</span></div></article></>}
+        {selectedSuggestion && <><section className="team-comparison"><header><div><small>CURRENT MY TEAM</small><h2>{selectedTeam ? selectedTeam.name : "マイチームが未登録"}</h2><p>{selectedTeam ? "選択中のマイチームを、いま選んでいる提案と同じ評価軸で比較する。" : "マイチームを登録すると、提案とのスコア差とタイプの幅を確認できる。"}</p></div>{selectedTeam && <b>{currentTeamScore}<em>/100</em></b>}</header>{selectedTeam && <div className="team-comparison-summary"><article><small>スコア差</small><strong className={scoreDifference >= 0 ? "positive" : "negative"}>{scoreDifference >= 0 ? "+" : ""}{scoreDifference} pts</strong><span>提案 {selectedSuggestion.score} pts</span></article><article><small>タイプの幅</small><strong>{currentTypeCount} 種類</strong><span>提案 {suggestedTypeCount} 種類</span></article><article><small>メンバー構成</small><strong>{selectedTeam.members.length} / 6</strong><span>提案と見比べて調整</span></article></div>}<div className="score-breakdown-grid">{selectedTeam && currentBreakdown && <ScoreBreakdownCard title={`マイチーム：${selectedTeam.name}`} breakdown={currentBreakdown} />}{suggestedBreakdown && <ScoreBreakdownCard title={`提案：${selectedSuggestion.title}チーム`} breakdown={suggestedBreakdown} />}</div></section><article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "構築の提案候補" : "別の構築候補"}</span><h2>{selectedSuggestion.title}チーム</h2></div><p><span>?</span><strong>この提案の理由</strong>{selectedSuggestion.reason}</p></div><div className="suggested-party">{selectedSuggestion.members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><section className="acquisition-advice"><header><small>HOW TO IMPROVE</small><h2>次に取得すると強くなるもの</h2><p>この構築候補の弱点・タイプ範囲・能力値・持ち物在庫から、次の一手を提案する。</p></header><div>{acquisitionAdvice.map((advice) => <article key={advice.label}><small>{advice.label}</small><h3>{advice.title}</h3><p>{advice.copy}</p><ul>{advice.points.map((point) => <li key={point}>{point}</li>)}</ul></article>)}</div></section><div className="beginner-explain"><strong>使い方の目安</strong><span>① 提案を構築検討に使う</span><span>② 実際に使う6体は「マイチーム」に登録する</span><span>③ 対戦ナビは登録したマイチームから選出する</span></div></article></>}
       </>
     )}
   </section>;
+}
+
+function ScoreBreakdownCard({ title, breakdown }: { title: string; breakdown: TeamScoreBreakdown }) {
+  return <article className="score-breakdown-card"><header><div><small>SCORE BREAKDOWN</small><h3>{title}</h3></div><b>{breakdown.score}<em>/100</em></b></header><ul>{breakdown.items.map((item) => <li key={item.label} className={item.kind}><span><strong>{item.label}</strong><small>{item.detail}</small></span><b className={item.points > 0 ? "positive" : item.points < 0 ? "negative" : "neutral"}>{item.points > 0 ? "+" : ""}{item.points} pts</b></li>)}</ul></article>;
 }
 
 function BattleTeamsPanel({ teams, roster, activeTeamId, onCreate, onEdit, onUse, onDelete }: { teams: BattleTeam[]; roster: RosterEntry[]; activeTeamId: number; onCreate: () => void; onEdit: (team: BattleTeam) => void; onUse: (id: number) => void; onDelete: (id: number) => void }) {
