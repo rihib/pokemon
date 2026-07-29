@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { demoState } from "../lib/demo-data";
 import type { AppState, BattleFormat, MasterEntry, OwnedItem, RosterEntry, Stats } from "../lib/types";
@@ -694,8 +694,10 @@ function PageTitle({ eyebrow, title, copy, count }: { eyebrow: string; title: st
 }
 function EmptyState({ title, copy, action, onAction }: { title: string; copy: string; action?: string; onAction?: () => void }) { return <div className="empty-state"><span>◇</span><h2>{title}</h2><p>{copy}</p>{action && <button onClick={onAction}>{action} →</button>}</div>; }
 
-function RosterModal({ value, master, masterRelations, onClose, onSave }: { value: RosterEntry; master: MasterEntry[]; masterRelations: AppState["masterRelations"]; onClose: () => void; onSave: (v: RosterEntry) => void }) {
+function RosterModal({ value, master, masterRelations, onClose, onSave }: { value: RosterEntry; master: MasterEntry[]; masterRelations: AppState["masterRelations"]; onClose: () => void; onSave: (v: RosterEntry) => Promise<void> }) {
   const [draft, setDraft] = useState({ ...value, moves: [...value.moves], stats: { ...value.stats } });
+  const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
   const update = (key: keyof RosterEntry, val: unknown) => setDraft((d) => ({ ...d, [key]: val }));
   const pokemon = master.filter((entry) => entry.category === "pokemon");
   const selectedPokemon = pokemon.find((entry) => entry.name === draft.species);
@@ -718,19 +720,35 @@ function RosterModal({ value, master, masterRelations, onClose, onSave }: { valu
     : [];
   const legacyOption = (current: string, options: MasterEntry[]) => current && !options.some((entry) => entry.name === current)
     ? <option value={current} disabled>{current}（マスター未登録）</option> : null;
+  const save = async () => {
+    if (saveLock.current) return;
+    saveLock.current = true;
+    setSaving(true);
+    try { await onSave(draft); }
+    finally { saveLock.current = false; setSaving(false); }
+  };
   return <Modal title={draft.id ? "ポケモンを編集" : "ポケモンを登録"} subtitle="マスターデータから選択して対戦情報を登録する" onClose={onClose}>
     <div className="form-grid"><label className="wide">ポケモン *<select value={draft.species} onChange={(e) => { const selected = pokemon.find((entry) => entry.name === e.target.value); const stats = selected?.data?.stats as Stats | undefined; setDraft((current) => ({ ...current, species: e.target.value, types: selected?.type ?? "", ability: "", form: "", megaEvolution: false, moves: ["", "", "", ""], stats: stats ? { ...stats } : current.stats })); }}><option value="">選択する</option>{legacyOption(draft.species, pokemon)}{pokemon.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}{entry.type ? `（${entry.type}）` : ""}</option>)}</select></label><label>ニックネーム<input value={draft.nickname} onChange={(e) => update("nickname", e.target.value)} /></label><label>タイプ<input value={draft.types || "ポケモンのマスター情報から設定"} disabled /></label><label>特性<select value={draft.ability} onChange={(e) => update("ability", e.target.value)}><option value="">未設定</option>{legacyOption(draft.ability, abilities)}{abilities.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>持ち物<select value={draft.heldItem} onChange={(e) => update("heldItem", e.target.value)}><option value="">なし・未設定</option>{legacyOption(draft.heldItem, items)}{items.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>性格<select value={draft.nature} onChange={(e) => update("nature", e.target.value)}><option value="">未設定</option>{legacyOption(draft.nature, natures)}{natures.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>フォルム・Mega<select value={draft.form} onChange={(e) => { const selected = forms.find((entry) => entry.name === e.target.value); const stats = selected?.data?.stats as Stats | undefined; setDraft((current) => ({ ...current, form: e.target.value, types: selected?.type || selectedPokemon?.type || "", megaEvolution: Boolean(selected?.data?.mega), stats: stats ? { ...stats } : current.stats })); }}><option value="">通常フォルム</option>{legacyOption(draft.form, forms)}{forms.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}{entry.data?.mega ? "（Mega）" : ""}</option>)}</select></label><label className="toggle-field"><input type="checkbox" checked={draft.megaEvolution} disabled /><span><strong>{draft.megaEvolution ? "Mega Evolutionを使用" : "通常フォルム"}</strong><small>フォルムのマスターデータから自動判定する</small></span></label>
       <fieldset className="wide"><legend>技（最大4つ）</legend><div className="move-input-grid">{[0,1,2,3].map((i) => <select key={i} value={draft.moves[i] ?? ""} onChange={(e) => { const nextMoves = [...draft.moves]; nextMoves[i] = e.target.value; update("moves", nextMoves); }}><option value="">技 {i + 1}：未設定</option>{legacyOption(draft.moves[i] ?? "", moves)}{moves.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select>)}</div></fieldset>
       <fieldset className="wide"><legend>種族値・ステータス目安</legend><div className="stat-input-grid">{([["hp","HP"],["attack","攻撃"],["defense","防御"],["spAttack","特攻"],["spDefense","特防"],["speed","素早さ"]] as [keyof Stats,string][]).map(([key,label]) => <label key={key}>{label}<input type="number" min="1" max="255" value={draft.stats[key]} onChange={(e) => update("stats", { ...draft.stats, [key]: Number(e.target.value) })} /></label>)}</div></fieldset>
       <label className="wide">メモ<textarea value={draft.notes} onChange={(e) => update("notes", e.target.value)} placeholder="使い方や注意点を記録" /></label>
-    </div><div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="form-primary" disabled={!draft.species.trim()} onClick={() => onSave(draft)}>保存する</button></div>
+    </div><div className="modal-actions"><button onClick={onClose} disabled={saving}>キャンセル</button><button className="form-primary" disabled={saving || !draft.species.trim()} onClick={() => void save()}>{saving ? "保存中…" : "保存する"}</button></div>
   </Modal>;
 }
 
-function ItemModal({ value, master, onClose, onSave }: { value: OwnedItem; master: MasterEntry[]; onClose: () => void; onSave: (v: OwnedItem) => void }) {
+function ItemModal({ value, master, onClose, onSave }: { value: OwnedItem; master: MasterEntry[]; onClose: () => void; onSave: (v: OwnedItem) => Promise<void> }) {
   const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
   const items = master.filter((entry) => entry.category === "item");
-  return <Modal title={draft.id ? "持ち物を編集" : "持ち物を登録"} subtitle="個数を登録すると構築時の重複を確認できる" onClose={onClose}><div className="form-grid"><label className="wide">持ち物 *<select value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })}><option value="">選択する</option>{draft.name && !items.some((entry) => entry.name === draft.name) && <option value={draft.name} disabled>{draft.name}（マスター未登録）</option>}{items.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>個数<input type="number" min="0" value={draft.quantity} onChange={(e) => setDraft({ ...draft, quantity: Number(e.target.value) })} /></label><label className="wide">メモ<textarea value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></label></div><div className="modal-actions"><button onClick={onClose}>キャンセル</button><button className="form-primary" disabled={!draft.name.trim()} onClick={() => onSave(draft)}>保存する</button></div></Modal>;
+  const save = async () => {
+    if (saveLock.current) return;
+    saveLock.current = true;
+    setSaving(true);
+    try { await onSave(draft); }
+    finally { saveLock.current = false; setSaving(false); }
+  };
+  return <Modal title={draft.id ? "持ち物を編集" : "持ち物を登録"} subtitle="個数を登録すると構築時の重複を確認できる" onClose={onClose}><div className="form-grid"><label className="wide">持ち物 *<select value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })}><option value="">選択する</option>{draft.name && !items.some((entry) => entry.name === draft.name) && <option value={draft.name} disabled>{draft.name}（マスター未登録）</option>}{items.map((entry) => <option key={entry.id} value={entry.name}>{entry.name}</option>)}</select></label><label>個数<input type="number" min="0" value={draft.quantity} onChange={(e) => setDraft({ ...draft, quantity: Number(e.target.value) })} /></label><label className="wide">メモ<textarea value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} /></label></div><div className="modal-actions"><button onClick={onClose} disabled={saving}>キャンセル</button><button className="form-primary" disabled={saving || !draft.name.trim()} onClick={() => void save()}>{saving ? "保存中…" : "保存する"}</button></div></Modal>;
 }
 
 function Modal({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
