@@ -43,6 +43,13 @@
       "when": 1785286090132,
       "tag": "0005_marvelous_adam_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1785307293576,
+      "tag": "0006_seed_champions_master",
+      "breakpoints": true
     }
   ]
 }
