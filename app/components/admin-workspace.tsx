@@ -248,8 +248,8 @@ function entrySummary(entry: MasterEntry) {
   if (entry.category === "regulation") {
     return `${String(data.startsAt ?? "開始未設定")}〜${String(data.endsAt ?? "終了未設定")}`;
   }
-  if (entry.category === "form") {
-    return `${entry.type || "タイプ未設定"}${data.mega ? "・Mega" : ""}`;
+  if (entry.category === "pokemon") {
+    return `${entry.type || "タイプ未設定"}${data.mega ? "・メガシンカ" : data.baseName ? "・別フォルム" : ""}`;
   }
   return entry.type || "未設定";
 }
@@ -259,7 +259,8 @@ function relationSummary(entry: MasterEntry, relations: MasterRelation[]) {
   if (entry.category === "pokemon") {
     const abilities = sourceRelations.filter((relation) => relation.kind === "has_ability").length;
     const moves = sourceRelations.filter((relation) => relation.kind === "learns_move").length;
-    return <small className="master-relation-summary">特性 {abilities}件・技 {moves}件を関連付け</small>;
+    const base = sourceRelations.some((relation) => relation.kind === "form_of");
+    return <small className="master-relation-summary">{base ? "元のポケモンを関連付け・" : ""}特性 {abilities}件・技 {moves}件</small>;
   }
   if (entry.category === "regulation") {
     return <small className="master-relation-summary">使用可能データ {sourceRelations.length}件</small>;
@@ -271,7 +272,7 @@ function relationSummary(entry: MasterEntry, relations: MasterRelation[]) {
 }
 
 function defaultDataFor(category: MasterEntry["category"]): Record<string, unknown> {
-  if (category === "pokemon" || category === "form") return { stats: emptyStats, mega: false };
+  if (category === "pokemon") return { stats: emptyStats, mega: false, baseName: "" };
   if (category === "move") return { damageClass: "物理", power: 0, accuracy: 100, priority: 0, target: "相手1体" };
   if (category === "nature") return { increasedStat: "", decreasedStat: "" };
   if (category === "regulation") return { startsAt: "", endsAt: "", singlePickCount: 3, doublePickCount: 4, active: false };
@@ -354,7 +355,7 @@ function MasterModal({
             <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
           </label>
 
-          {(draft.category === "pokemon" || draft.category === "form") && (
+          {draft.category === "pokemon" && (
             <TypePairFields entry={draft} types={options("type")} onChange={setDraft} />
           )}
 
@@ -399,32 +400,40 @@ function MasterModal({
             </>
           )}
 
-          {(draft.category === "pokemon" || draft.category === "form") && (
+          {draft.category === "pokemon" && (
             <StatsFields
               value={(draft.data?.stats as Stats | undefined) ?? emptyStats}
               onChange={(stats) => updateData("stats", stats)}
             />
           )}
 
-          {draft.category === "form" && (
+          {draft.category === "pokemon" && (
             <>
               <label>
-                元のポケモン *
+                元のポケモン
                 <select
                   value={draftRelations.find((relation) => relation.kind === "form_of")?.targetId ?? 0}
-                  onChange={(event) => setSingleRelation("form_of", Number(event.target.value))}
+                  onChange={(event) => {
+                    const targetId = Number(event.target.value);
+                    const base = entries.find((entry) => entry.id === targetId);
+                    setSingleRelation("form_of", targetId);
+                    updateData("baseName", base?.name ?? "");
+                    if (!targetId) updateData("mega", false);
+                  }}
                 >
-                  <option value={0}>選択する</option>
+                  <option value={0}>なし（通常のポケモン）</option>
                   {options("pokemon").map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
                 </select>
+                <small className="field-hint">別フォルムまたはメガシンカだけ設定する。</small>
               </label>
               <label className="toggle-field">
                 <input
                   type="checkbox"
                   checked={Boolean(draft.data?.mega)}
                   onChange={(event) => updateData("mega", event.target.checked)}
+                  disabled={!draftRelations.some((relation) => relation.kind === "form_of")}
                 />
-                <span><strong>Mega Evolution</strong><small>Mega進化後のフォルムとして扱う</small></span>
+                <span><strong>メガシンカ</strong><small>メガシンカ後のポケモンとして扱う</small></span>
               </label>
             </>
           )}
@@ -504,7 +513,6 @@ function MasterModal({
             <>
               <RelationChecklist title="使用可能なポケモン" options={options("pokemon")} selected={draftRelations.filter((relation) => relation.kind === "allows_pokemon").map((relation) => relation.targetId)} onToggle={(id) => toggleRelation("allows_pokemon", id)} searchable />
               <RelationChecklist title="使用可能な持ち物" options={options("item")} selected={draftRelations.filter((relation) => relation.kind === "allows_item").map((relation) => relation.targetId)} onToggle={(id) => toggleRelation("allows_item", id)} searchable />
-              <RelationChecklist title="使用可能なフォルム・Mega" options={options("form")} selected={draftRelations.filter((relation) => relation.kind === "allows_form").map((relation) => relation.targetId)} onToggle={(id) => toggleRelation("allows_form", id)} />
             </>
           )}
         </div>
@@ -514,7 +522,7 @@ function MasterModal({
           <button
             type="button"
             className="form-primary"
-            disabled={saving || !draft.name.trim() || (draft.category === "form" && !draftRelations.some((relation) => relation.kind === "form_of"))}
+            disabled={saving || !draft.name.trim()}
             onClick={() => onSave(draft, draftRelations)}
           >
             {saving ? "保存中…" : "保存する"}
