@@ -58,9 +58,9 @@ for (const mon of demoRoster) {
 }
 for (const form of championsFormMaster) {
   const baseName = String(form.data?.baseName ?? "");
-  const pokemon = masterBy("pokemon", baseName);
-  if (pokemon) {
-    demoMasterRelations.push({ id: relationId++, sourceId: form.id, targetId: pokemon.id, kind: "form_of" });
+  const base = masterBy("pokemon", baseName) ?? masterBy("form", baseName);
+  if (base) {
+    demoMasterRelations.push({ id: relationId++, sourceId: form.id, targetId: base.id, kind: "form_of" });
   }
 }
 const regulation = masterBy("regulation", "Regulation M-B");
