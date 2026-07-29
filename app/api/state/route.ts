@@ -83,7 +83,7 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Failed to load application state", error);
-    return Response.json({ error: "初期データを読み込めなかった。再読み込みしても解決しない場合は、時間をおいてもう一度試してほしい。" }, { status: 500 });
+    return Response.json({ error: "エラーが発生しました" }, { status: 500 });
   }
 }
 
@@ -334,6 +334,6 @@ export async function POST(request: Request) {
     return Response.json({ error: "未対応の操作である" }, { status: 400 });
   } catch (error) {
     console.error("Failed to update application state", error);
-    return Response.json({ error: "操作を保存できなかった。再度試しても解決しない場合は、時間をおいてもう一度試してほしい。" }, { status: 500 });
+    return Response.json({ error: "エラーが発生しました" }, { status: 500 });
   }
 }
