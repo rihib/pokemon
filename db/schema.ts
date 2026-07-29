@@ -7,7 +7,6 @@ export const users = sqliteTable("users", {
   displayName: text("display_name").notNull(),
   handle: text("handle").notNull(),
   preferredFormat: text("preferred_format", { enum: ["single", "double"] }).notNull().default("single"),
-  preferredStyle: text("preferred_style").notNull().default("balance"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
   uniqueIndex("users_email_idx").on(table.email),
