@@ -126,6 +126,109 @@ function combinedTypeMultiplier(attackType: string, defenseTypes: string[], maps
   }, 1);
 }
 
+type AcquisitionAdvice = {
+  label: string;
+  title: string;
+  copy: string;
+  points: string[];
+};
+
+function createAcquisitionAdvice(
+  party: RosterEntry[],
+  ownedItems: OwnedItem[],
+  master: MasterEntry[],
+  relations: AppState["masterRelations"],
+  format: BattleFormat,
+): AcquisitionAdvice[] {
+  if (!party.length) return [];
+  const maps = createMasterMaps(master);
+  const allTypes = [...maps.typeByName.keys()];
+  const weakTypeCounts = allTypes
+    .map((attackType) => ({
+      attackType,
+      count: party.filter((mon) => combinedTypeMultiplier(attackType, splitTypes(mon.types), maps, relations) >= 2).length,
+    }))
+    .filter((entry) => entry.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const topThreats = weakTypeCounts.slice(0, 2);
+  const defensiveType = allTypes
+    .map((candidateType) => ({
+      type: candidateType,
+      score: topThreats.reduce((sum, threat) => sum + threat.count * (combinedTypeMultiplier(threat.attackType, [candidateType], maps, relations) <= .5 ? 1 : 0), 0),
+    }))
+    .sort((a, b) => b.score - a.score)[0];
+  const partyAttackTypes = new Set(party.flatMap((mon) => splitTypes(mon.types)));
+  const offensiveGap = allTypes
+    .map((defenseType) => ({
+      defenseType,
+      covered: [...partyAttackTypes].some((attackType) => combinedTypeMultiplier(attackType, [defenseType], maps, relations) >= 2),
+    }))
+    .filter((entry) => !entry.covered)
+    .map((entry) => entry.defenseType);
+  const bestAttackType = allTypes
+    .map((attackType) => ({
+      type: attackType,
+      score: offensiveGap.filter((defenseType) => combinedTypeMultiplier(attackType, [defenseType], maps, relations) >= 2).length,
+    }))
+    .sort((a, b) => b.score - a.score)[0];
+  const averages = party.reduce((sum, mon) => ({
+    hp: sum.hp + mon.stats.hp,
+    attack: sum.attack + mon.stats.attack,
+    defense: sum.defense + mon.stats.defense,
+    spAttack: sum.spAttack + mon.stats.spAttack,
+    spDefense: sum.spDefense + mon.stats.spDefense,
+    speed: sum.speed + mon.stats.speed,
+  }), { hp: 0, attack: 0, defense: 0, spAttack: 0, spDefense: 0, speed: 0 });
+  const averageSpeed = averages.speed / party.length;
+  const averageBulk = (averages.hp + averages.defense + averages.spDefense) / party.length;
+  const statTarget = averageSpeed < 90
+    ? "素早さ100以上を目安"
+    : averageBulk < 260
+      ? "HP・防御・特防の合計300以上を目安"
+      : "攻撃または特攻120以上を目安";
+  const candidate = master.find((entry) =>
+    entry.category === "pokemon" &&
+    !party.some((mon) => mon.species === entry.name) &&
+    Boolean(defensiveType && splitTypes(entry.type).includes(defensiveType.type)),
+  );
+  const pokemonAdvice: AcquisitionAdvice = {
+    label: "NEXT POKÉMON",
+    title: defensiveType?.score
+      ? `${defensiveType.type}タイプを補強`
+      : "タイプの選択肢を増やす",
+    copy: topThreats.length
+      ? `${topThreats.map((threat) => `${threat.attackType}タイプに${threat.count}体が弱い`).join("、")}。受け先を増やすと、選出の安定性が上がる。`
+      : "タイプの弱点が大きく偏っていない。次は攻撃範囲を広げるポケモンを加えるとよい。",
+    points: [
+      statTarget,
+      bestAttackType?.score ? `${bestAttackType.type}タイプで未対応のタイプに打点を持たせる` : "既存メンバーと異なるタイプを優先",
+      candidate ? `図鑑マスターの候補：${candidate.name}（${candidate.type}）` : "図鑑マスターから条件に合うポケモンを追加",
+    ],
+  };
+  const physicalCount = party.filter((mon) => mon.stats.attack >= mon.stats.spAttack).length;
+  const specialCount = party.length - physicalCount;
+  const itemNames = new Set(ownedItems.filter((item) => item.quantity > 0).map((item) => item.name));
+  const preferredItems = [
+    physicalCount >= specialCount ? "こだわりハチマキ" : "こだわりメガネ",
+    averageBulk < 260 ? "きあいのタスキ" : format === "double" ? "オボンのみ" : "たべのこし",
+  ];
+  const masterItemNames = new Set(master.filter((entry) => entry.category === "item").map((entry) => entry.name));
+  const missingItems = preferredItems.filter((name) => masterItemNames.has(name) && !itemNames.has(name));
+  const itemAdvice: AcquisitionAdvice = {
+    label: "NEXT ITEMS",
+    title: missingItems.length ? `「${missingItems[0]}」の取得を優先` : "持ち物の選択肢を増やす",
+    copy: missingItems.length
+      ? "現在のパーティーには、この役割を支える持ち物の在庫がない。先に確保すると構築候補を切り替えやすくなる。"
+      : "主要な役割向けの持ち物は確保できている。重複しにくい別の役割向け持ち物を増やすと対応力が上がる。",
+    points: [
+      physicalCount >= specialCount ? "物理アタッカーの火力を伸ばす持ち物" : "特殊アタッカーの火力を伸ばす持ち物",
+      averageBulk < 260 ? "行動保証を作る「きあいのタスキ」系" : "交代戦を支える回復・耐久系の持ち物",
+      party.some((mon) => mon.megaEvolution) ? "メガ進化を使う個体には対応するメガストーンを確保" : "メガ進化を採用する場合は対応するメガストーンも確認",
+    ],
+  };
+  return [pokemonAdvice, itemAdvice];
+}
+
 function directMatchup(mon: RosterEntry, opponent: MasterEntry, maps: MasterMaps, relations: AppState["masterRelations"]): DirectMatchup {
   const opponentTypes = splitTypes(opponent.type);
   const monTypes = splitTypes(mon.types);
@@ -423,7 +526,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
             {tab === "home" && <Dashboard state={state} onGo={setTab} suggestions={suggestions} />}
             {tab === "roster" && <RosterPanel roster={state.roster} onEdit={setRosterEditor} onDelete={(id) => void mutate("delete-roster", { id }, () => setState((s) => ({ ...s, roster: s.roster.filter((m) => m.id !== id) })))} />}
             {tab === "items" && <ItemsPanel items={state.items} onEdit={setItemEditor} onDelete={(id) => void mutate("delete-item", { id }, () => setState((s) => ({ ...s, items: s.items.filter((i) => i.id !== id) })))} />}
-            {tab === "build" && <BuildPanel roster={availableRoster} format={format} pickCount={pickCount} suggestions={suggestions} selected={selectedSuggestion} setSelected={setSelectedSuggestion} onRoster={() => setTab("roster")} />}
+            {tab === "build" && <BuildPanel roster={availableRoster} items={state.items} master={state.master} masterRelations={state.masterRelations} format={format} pickCount={pickCount} suggestions={suggestions} selected={selectedSuggestion} setSelected={setSelectedSuggestion} onRoster={() => setTab("roster")} />}
             {tab === "battle" && <BattlePanel format={format} pickCount={pickCount} opponents={opponents} setOpponents={setOpponents} selection={selection} enemyLead={enemyLead} setEnemyLead={setEnemyLead} lead={lead} onRoster={() => setTab("roster")} />}
             {tab === "settings" && <SettingsPanel state={state} visibleRole={visibleRole} format={format} mode={mode} onSave={(payload) => void mutate("save-profile", payload, () => setState((s) => ({ ...s, user: { ...s.user, ...payload } })))} onDelete={() => void mutate("delete-account", {}, () => { window.location.href = "/"; })} />}
           </div>
@@ -493,8 +596,11 @@ function ItemsPanel({ items, onEdit, onDelete }: { items: OwnedItem[]; onEdit: (
     {!items.length && <EmptyState title="持ち物が登録されていない" copy="持っている数を登録すると、同じ持ち物の使いすぎを防げる。" />}</section>;
 }
 
-function BuildPanel({ roster, format, pickCount, suggestions, selected, setSelected, onRoster }: { roster: RosterEntry[]; format: BattleFormat; pickCount: number; suggestions: ReturnType<typeof createSuggestions>; selected: number; setSelected: (v: number) => void; onRoster: () => void }) {
+function BuildPanel({ roster, items, master, masterRelations, format, pickCount, suggestions, selected, setSelected, onRoster }: { roster: RosterEntry[]; items: OwnedItem[]; master: MasterEntry[]; masterRelations: AppState["masterRelations"]; format: BattleFormat; pickCount: number; suggestions: ReturnType<typeof createSuggestions>; selected: number; setSelected: (v: number) => void; onRoster: () => void }) {
   const ready = roster.length >= 6;
+  const acquisitionAdvice = suggestions[selected]
+    ? createAcquisitionAdvice(suggestions[selected].members, items, master, masterRelations, format)
+    : [];
   return <section>
     <PageTitle
       eyebrow="PARTY BUILDER"
@@ -507,7 +613,7 @@ function BuildPanel({ roster, format, pickCount, suggestions, selected, setSelec
     ) : (
       <>
         <div className="suggestion-tabs">{suggestions.map((s, i) => <button key={`${s.title}-${i}`} className={selected === i ? "active" : ""} onClick={() => setSelected(i)}><small>PLAN {String(i + 1).padStart(2, "0")}</small><strong>{s.title}</strong><span>{s.tone}</span><b>{s.score}<em>/100</em></b></button>)}</div>
-        {suggestions[selected] && <article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "現在の構築候補" : "別の構築候補"}</span><h2>{suggestions[selected].title}パーティー</h2></div><p><span>?</span><strong>この提案の理由</strong>{suggestions[selected].reason}</p></div><div className="suggested-party">{suggestions[selected].members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><div className="beginner-explain"><strong>使い方の目安</strong><span>① 相手の6体を見る</span><span>② 対戦ナビで{pickCount}体を選ぶ</span><span>③ 相手の先発に応じた順位を見る</span><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>この構築候補を使う ✓</button></div></article>}
+        {suggestions[selected] && <article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "現在の構築候補" : "別の構築候補"}</span><h2>{suggestions[selected].title}パーティー</h2></div><p><span>?</span><strong>この提案の理由</strong>{suggestions[selected].reason}</p></div><div className="suggested-party">{suggestions[selected].members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><section className="acquisition-advice"><header><small>HOW TO IMPROVE</small><h2>次に取得すると強くなるもの</h2><p>この構築候補の弱点・タイプ範囲・能力値・持ち物在庫から、次の一手を提案する。</p></header><div>{acquisitionAdvice.map((advice) => <article key={advice.label}><small>{advice.label}</small><h3>{advice.title}</h3><p>{advice.copy}</p><ul>{advice.points.map((point) => <li key={point}>{point}</li>)}</ul></article>)}</div></section><div className="beginner-explain"><strong>使い方の目安</strong><span>① 相手の6体を見る</span><span>② 対戦ナビで{pickCount}体を選ぶ</span><span>③ 相手の先発に応じた順位を見る</span><button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>この構築候補を使う ✓</button></div></article>}
       </>
     )}
   </section>;
