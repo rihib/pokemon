@@ -33,6 +33,8 @@ const emptyStats: Stats = {
   speed: 80,
 };
 
+const userError = "エラーが発生しました。";
+
 export default function AdminWorkspace({ page }: { page: MasterCategoryPage }) {
   const [entries, setEntries] = useState<MasterEntry[]>([]);
   const [relations, setRelations] = useState<MasterRelation[]>([]);
@@ -57,10 +59,11 @@ export default function AdminWorkspace({ page }: { page: MasterCategoryPage }) {
     try {
       const response = await fetch("/api/state", { cache: "no-store" });
       const data = await response.json() as AppState & { error?: string };
-      if (!response.ok) throw new Error(data.error || "読み込みに失敗した");
+      if (!response.ok) throw new Error(userError);
       applyState(data);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "読み込みに失敗した");
+      console.error("Failed to load master data", caught);
+      setError(userError);
     } finally {
       setLoading(false);
     }
@@ -71,14 +74,15 @@ export default function AdminWorkspace({ page }: { page: MasterCategoryPage }) {
     fetch("/api/state", { cache: "no-store" })
       .then(async (response) => {
         const data = await response.json() as AppState & { error?: string };
-        if (!response.ok) throw new Error(data.error || "読み込みに失敗した");
+        if (!response.ok) throw new Error(userError);
         return data;
       })
       .then((data) => {
         if (active) applyState(data);
       })
       .catch((caught: unknown) => {
-        if (active) setError(caught instanceof Error ? caught.message : "読み込みに失敗した");
+        console.error("Failed to load master data", caught);
+        if (active) setError(userError);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -100,14 +104,15 @@ export default function AdminWorkspace({ page }: { page: MasterCategoryPage }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action, payload }),
       });
-      const data = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(data.error || "操作に失敗した");
+      await response.json();
+      if (!response.ok) throw new Error(userError);
       await refresh();
       setNotice(action === "save-master" ? "マスターデータを保存した" : "マスターデータを削除した");
       window.setTimeout(() => setNotice(""), 1800);
       return true;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "操作に失敗した");
+      console.error("Failed to update master data", caught);
+      setError(userError);
       return false;
     } finally {
       setSaving(false);
