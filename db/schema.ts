@@ -27,7 +27,7 @@ export const authIdentities = sqliteTable("auth_identities", {
 export const masterData = sqliteTable("master_data", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   category: text("category", {
-    enum: ["pokemon", "item", "ability", "move", "nature", "type", "regulation"],
+    enum: ["pokemon", "item", "ability", "move", "nature", "type", "archived", "regulation"],
   }).notNull(),
   name: text("name").notNull(),
   type: text("type").notNull().default(""),
