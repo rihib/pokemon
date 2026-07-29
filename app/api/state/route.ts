@@ -221,13 +221,10 @@ export async function POST(request: Request) {
       }
       const preferredFormat = ["single", "double"].includes(String(payload.preferredFormat))
         ? String(payload.preferredFormat) as "single" | "double" : auth.profile.preferredFormat;
-      const preferredStyle = ["balance", "attack", "control", "endurance"].includes(String(payload.preferredStyle))
-        ? String(payload.preferredStyle) : auth.profile.preferredStyle;
       const [saved] = await db.update(users).set({
         displayName,
         handle,
         preferredFormat,
-        preferredStyle,
       }).where(eq(users.id, auth.profile.id)).returning();
       return Response.json({ saved: publicProfile(saved) });
     }
