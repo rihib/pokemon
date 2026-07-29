@@ -57,6 +57,13 @@
       "when": 1785308660816,
       "tag": "0007_complete_champions_forms",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785309709730,
+      "tag": "0008_unify_pokemon_master",
+      "breakpoints": true
     }
   ]
 }
