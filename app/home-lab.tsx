@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 
 const party = [
@@ -12,26 +12,7 @@ const party = [
   { name: "ポリゴン2", role: "耐久", hue: "violet", mark: "P2" },
 ];
 
-const styles = [
-  {
-    id: "balance",
-    icon: "◇",
-    name: "バランス",
-    copy: "攻めと守りを両立。迷ったらここから",
-  },
-  {
-    id: "attack",
-    icon: "↗",
-    name: "速攻",
-    copy: "素早く主導権を取り、短期決戦へ",
-  },
-  {
-    id: "control",
-    icon: "◎",
-    name: "コントロール",
-    copy: "交代や状態変化で相手の選択肢を狭める",
-  },
-];
+const sampleScore = { attack: 4.0, guard: 3.8, speed: 4.2 };
 
 export default function HomeLab({
   user,
@@ -41,14 +22,7 @@ export default function HomeLab({
   signInPath: string;
 }) {
   const [format, setFormat] = useState<"single" | "double">("single");
-  const [style, setStyle] = useState("balance");
   const [reasonOpen, setReasonOpen] = useState(false);
-
-  const score = useMemo(() => {
-    if (style === "attack") return { attack: 4.7, guard: 2.8, speed: 4.8 };
-    if (style === "control") return { attack: 3.2, guard: 4.1, speed: 3.6 };
-    return { attack: 4.0, guard: 3.8, speed: 4.2 };
-  }, [style]);
 
   return (
     <main className="landing-shell">
@@ -98,9 +72,9 @@ export default function HomeLab({
           <div className="builder-head">
             <div>
               <span className="step-tag">STEP 01</span>
-              <h2>どんなバトルをしたい？</h2>
+              <h2>対戦形式を選ぼう</h2>
             </div>
-            <span className="completion">準備 2 / 3</span>
+            <span className="completion">準備 1 / 2</span>
           </div>
 
           <div className="choice-row">
@@ -126,27 +100,6 @@ export default function HomeLab({
             </div>
           </div>
 
-          <div className="choice-section">
-            <div className="choice-label">
-              <span>2</span>
-              <div><strong>好みの戦い方</strong><small>後からいつでも変更可能</small></div>
-            </div>
-            <div className="style-grid">
-              {styles.map((item) => (
-                <button
-                  key={item.id}
-                  className={`style-option ${style === item.id ? "selected" : ""}`}
-                  onClick={() => setStyle(item.id)}
-                  aria-pressed={style === item.id}
-                >
-                  <span className="style-icon">{item.icon}</span>
-                  <span><strong>{item.name}</strong><small>{item.copy}</small></span>
-                  <i>{style === item.id ? "✓" : ""}</i>
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="mini-analysis">
             <div className="mini-party">
               <div className="analysis-title"><strong>サンプル構築</strong><span>6 / 6</span></div>
@@ -160,9 +113,9 @@ export default function HomeLab({
               </div>
             </div>
             <div className="score-box">
-              <div><span>攻撃</span><b style={{ "--score": `${score.attack * 20}%` } as React.CSSProperties}></b><em>{score.attack}</em></div>
-              <div><span>耐久</span><b style={{ "--score": `${score.guard * 20}%` } as React.CSSProperties}></b><em>{score.guard}</em></div>
-              <div><span>素早さ</span><b style={{ "--score": `${score.speed * 20}%` } as React.CSSProperties}></b><em>{score.speed}</em></div>
+              <div><span>攻撃</span><b style={{ "--score": `${sampleScore.attack * 20}%` } as React.CSSProperties}></b><em>{sampleScore.attack}</em></div>
+              <div><span>耐久</span><b style={{ "--score": `${sampleScore.guard * 20}%` } as React.CSSProperties}></b><em>{sampleScore.guard}</em></div>
+              <div><span>素早さ</span><b style={{ "--score": `${sampleScore.speed * 20}%` } as React.CSSProperties}></b><em>{sampleScore.speed}</em></div>
             </div>
           </div>
 
@@ -184,7 +137,7 @@ export default function HomeLab({
           <h2>迷うところだけ、<br />ひとつずつ支援。</h2>
         </div>
         <article><span>01</span><strong>手持ちを登録</strong><p>ステータスが分からなくても、名前と技から始められる。</p></article>
-        <article><span>02</span><strong>構築を選ぶ</strong><p>複数案を比較し、好みの戦い方に合う案を選択。</p></article>
+        <article><span>02</span><strong>構築を比較</strong><p>複数案を比較し、実際に使うマイチームを登録。</p></article>
         <article><span>03</span><strong>対戦中もナビ</strong><p>相手の6体から選出と先発を、理由つきで提案。</p></article>
       </section>
 

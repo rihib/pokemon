@@ -126,18 +126,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .segmented button.selected { background: var(--ink); color: white; }
 .choice-section { padding: 18px 0; }
 .choice-section > .choice-label { margin-bottom: 12px; }
-.style-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
-.style-option {
-  min-height: 89px; padding: 13px 10px; display: grid; grid-template-columns: 28px 1fr 16px; gap: 7px; align-items: start;
-  text-align: left; border: 1px solid var(--line); border-radius: 11px; color: var(--ink); background: #fffef9; cursor: pointer; transition: .18s ease;
-}
-.style-option:hover { transform: translateY(-2px); box-shadow: 0 7px 15px rgba(23, 63, 53, .08); }
-.style-option.selected { border: 2px solid var(--orange); padding: 12px 9px; background: #fff8ef; }
-.style-option strong, .style-option small { display: block; }
-.style-option strong { font-size: 12px; margin: 2px 0 5px; }
-.style-option small { color: #607770; font-size: 8px; line-height: 1.5; }
-.style-option i { color: var(--orange-dark); font-style: normal; font-weight: 900; }
-.style-icon { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; background: var(--mint); font-weight: 900; color: var(--ink); }
 .mini-analysis { padding: 15px; border-radius: 12px; background: var(--mint-soft); display: grid; grid-template-columns: 1.35fr .65fr; gap: 16px; }
 .analysis-title { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 10px; }
 .party-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
@@ -201,8 +189,6 @@ footer small { grid-column: 1 / -1; color: var(--ink-soft); font-size: 10px; }
   .hero-actions, .trust-row { justify-content: flex-start; }
   .builder-card { padding: 18px 14px; box-shadow: 5px 7px 0 rgba(23,63,53,.08); }
   .choice-row { grid-template-columns: 1fr; gap: 11px; }
-  .style-grid { grid-template-columns: 1fr; }
-  .style-option { min-height: 70px; }
   .mini-analysis { grid-template-columns: 1fr; }
   .score-box { border: 0; border-top: 1px solid var(--line); padding: 13px 0 0; }
   .how-section { grid-template-columns: 1fr; padding: 50px 18px; }
