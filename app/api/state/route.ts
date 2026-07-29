@@ -1,7 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { masterData, masterRelations, ownedItems, roster, users } from "../../../db/schema";
-import { demoMaster, demoMasterRelations } from "../../lib/demo-data";
 import type { MasterCategory, MasterRelationKind } from "../../lib/types";
 import { publicProfile, requireAppIdentity } from "../../lib/server-identity";
 
@@ -9,83 +8,10 @@ function safeJson<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
-async function insertInBatches<T>(
-  values: T[],
-  insert: (batch: T[]) => Promise<unknown>,
-  batchSize = 10,
-) {
-  for (let start = 0; start < values.length; start += batchSize) {
-    await insert(values.slice(start, start + batchSize));
-  }
-}
-
-async function seedBaselineMaster() {
-  const db = await getDb();
-  const masterValues = demoMaster.map((entry) => ({
-    category: entry.category,
-    name: entry.name,
-    type: entry.type,
-    description: entry.description,
-    data: JSON.stringify(entry.data ?? {}),
-  }));
-  const existingMaster = await db
-    .select({ category: masterData.category, name: masterData.name })
-    .from(masterData);
-  const existingMasterKeys = new Set(
-    existingMaster.map((entry) => `${entry.category}:${entry.name}`),
-  );
-  const missingMasterValues = masterValues.filter(
-    (entry) => !existingMasterKeys.has(`${entry.category}:${entry.name}`),
-  );
-  // D1 has a small bound-parameter limit.  Initial master data is deliberately
-  // inserted in small chunks so a fresh database can always be initialized.
-  await insertInBatches(missingMasterValues, (batch) =>
-    db.insert(masterData).values(batch).onConflictDoNothing(),
-  );
-
-  const persisted = await db.select().from(masterData);
-  const demoById = new Map(demoMaster.map((entry) => [entry.id, entry]));
-  const persistedByKey = new Map(persisted.map((entry) => [`${entry.category}:${entry.name}`, entry]));
-  const existingRelations = await db
-    .select({
-      sourceId: masterRelations.sourceId,
-      targetId: masterRelations.targetId,
-      kind: masterRelations.kind,
-    })
-    .from(masterRelations);
-  const existingRelationKeys = new Set(
-    existingRelations.map((relation) =>
-      `${relation.sourceId}:${relation.targetId}:${relation.kind}`),
-  );
-  const relationValues = demoMasterRelations.flatMap((relation) => {
-    const demoSource = demoById.get(relation.sourceId);
-    const demoTarget = demoById.get(relation.targetId);
-    if (!demoSource || !demoTarget) return [];
-    const source = persistedByKey.get(`${demoSource.category}:${demoSource.name}`);
-    const target = persistedByKey.get(`${demoTarget.category}:${demoTarget.name}`);
-    if (!source || !target) return [];
-    const value = {
-      sourceId: source.id,
-      targetId: target.id,
-      kind: relation.kind,
-      data: JSON.stringify(relation.data ?? {}),
-    };
-    return existingRelationKeys.has(`${value.sourceId}:${value.targetId}:${value.kind}`)
-      ? []
-      : [value];
-  });
-  if (relationValues.length) {
-    await insertInBatches(relationValues, (batch) =>
-      db.insert(masterRelations).values(batch).onConflictDoNothing(),
-    );
-  }
-}
-
 export async function GET() {
   try {
     const auth = await requireAppIdentity();
     if (!auth) return Response.json({ error: "ログインが必要である" }, { status: 401 });
-    await seedBaselineMaster();
     const db = await getDb();
     const [rosterRows, itemRows, masterRows, relationRows] = await Promise.all([
       db.select().from(roster).where(eq(roster.ownerId, auth.profile.id)).orderBy(asc(roster.id)),
