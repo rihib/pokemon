@@ -28,15 +28,35 @@ async function seedBaselineMaster() {
     description: entry.description,
     data: JSON.stringify(entry.data ?? {}),
   }));
+  const existingMaster = await db
+    .select({ category: masterData.category, name: masterData.name })
+    .from(masterData);
+  const existingMasterKeys = new Set(
+    existingMaster.map((entry) => `${entry.category}:${entry.name}`),
+  );
+  const missingMasterValues = masterValues.filter(
+    (entry) => !existingMasterKeys.has(`${entry.category}:${entry.name}`),
+  );
   // D1 has a small bound-parameter limit.  Initial master data is deliberately
   // inserted in small chunks so a fresh database can always be initialized.
-  await insertInBatches(masterValues, (batch) =>
+  await insertInBatches(missingMasterValues, (batch) =>
     db.insert(masterData).values(batch).onConflictDoNothing(),
   );
 
   const persisted = await db.select().from(masterData);
   const demoById = new Map(demoMaster.map((entry) => [entry.id, entry]));
   const persistedByKey = new Map(persisted.map((entry) => [`${entry.category}:${entry.name}`, entry]));
+  const existingRelations = await db
+    .select({
+      sourceId: masterRelations.sourceId,
+      targetId: masterRelations.targetId,
+      kind: masterRelations.kind,
+    })
+    .from(masterRelations);
+  const existingRelationKeys = new Set(
+    existingRelations.map((relation) =>
+      `${relation.sourceId}:${relation.targetId}:${relation.kind}`),
+  );
   const relationValues = demoMasterRelations.flatMap((relation) => {
     const demoSource = demoById.get(relation.sourceId);
     const demoTarget = demoById.get(relation.targetId);
@@ -44,12 +64,15 @@ async function seedBaselineMaster() {
     const source = persistedByKey.get(`${demoSource.category}:${demoSource.name}`);
     const target = persistedByKey.get(`${demoTarget.category}:${demoTarget.name}`);
     if (!source || !target) return [];
-    return [{
+    const value = {
       sourceId: source.id,
       targetId: target.id,
       kind: relation.kind,
       data: JSON.stringify(relation.data ?? {}),
-    }];
+    };
+    return existingRelationKeys.has(`${value.sourceId}:${value.targetId}:${value.kind}`)
+      ? []
+      : [value];
   });
   if (relationValues.length) {
     await insertInBatches(relationValues, (batch) =>
