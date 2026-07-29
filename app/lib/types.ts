@@ -47,6 +47,12 @@ export type OwnedItem = {
   notes: string;
 };
 
+export type BattleTeam = {
+  id: number;
+  name: string;
+  members: RosterEntry[];
+};
+
 export type MasterEntry = {
   id: number;
   category: MasterCategory;
@@ -75,6 +81,7 @@ export type AppState = {
   };
   roster: RosterEntry[];
   items: OwnedItem[];
+  battleTeams: BattleTeam[];
   master: MasterEntry[];
   masterRelations: MasterRelation[];
 };

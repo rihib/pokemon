@@ -111,6 +111,7 @@ for (const [attackingName, defenses] of Object.entries(typeChart)) {
 export const demoState: AppState = {
   user: { id: 1, email: "demo@example.com", displayName: "ビギナートレーナー", handle: "beginner", role: "admin", preferredFormat: "single" },
   roster: demoRoster,
+  battleTeams: [{ id: 1, name: "はじめてのバトルチーム", members: demoRoster.slice(0, 6) }],
   items: [
     { id: 1, name: "こだわりハチマキ", quantity: 1, notes: "カイリュー用" },
     { id: 2, name: "きあいのタスキ", quantity: 2, notes: "先発候補に持たせる" },

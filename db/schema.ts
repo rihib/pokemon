@@ -82,6 +82,27 @@ export const roster = sqliteTable("roster", {
   index("roster_owner_idx").on(table.ownerId),
 ]);
 
+export const battleTeams = sqliteTable("battle_teams", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("battle_teams_owner_idx").on(table.ownerId),
+]);
+
+export const battleTeamMembers = sqliteTable("battle_team_members", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  teamId: integer("team_id").notNull().references(() => battleTeams.id, { onDelete: "cascade" }),
+  rosterId: integer("roster_id").notNull().references(() => roster.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+}, (table) => [
+  uniqueIndex("battle_team_member_position_idx").on(table.teamId, table.position),
+  uniqueIndex("battle_team_member_roster_idx").on(table.teamId, table.rosterId),
+  index("battle_team_members_team_idx").on(table.teamId),
+]);
+
 export const ownedItems = sqliteTable("owned_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   ownerId: integer("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),

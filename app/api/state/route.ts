@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../db";
-import { masterData, masterRelations, ownedItems, roster, users } from "../../../db/schema";
+import { battleTeamMembers, battleTeams, masterData, masterRelations, ownedItems, roster, users } from "../../../db/schema";
 import type { MasterCategory, MasterRelationKind } from "../../lib/types";
 import { publicProfile, requireAppIdentity } from "../../lib/server-identity";
 
@@ -8,25 +8,38 @@ function safeJson<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
+function rosterForClient(row: typeof roster.$inferSelect) {
+  return {
+    ...row,
+    moves: safeJson<string[]>(row.moves, []),
+    stats: safeJson(row.stats, { hp: 80, attack: 80, defense: 80, spAttack: 80, spDefense: 80, speed: 80 }),
+  };
+}
+
 export async function GET() {
   try {
     const auth = await requireAppIdentity();
     if (!auth) return Response.json({ error: "ログインが必要である" }, { status: 401 });
     const db = await getDb();
-    const [rosterRows, itemRows, masterRows, relationRows] = await Promise.all([
+    const [rosterRows, itemRows, teamRows, masterRows, relationRows] = await Promise.all([
       db.select().from(roster).where(eq(roster.ownerId, auth.profile.id)).orderBy(asc(roster.id)),
       db.select().from(ownedItems).where(eq(ownedItems.ownerId, auth.profile.id)).orderBy(asc(ownedItems.id)),
+      db.select().from(battleTeams).where(eq(battleTeams.ownerId, auth.profile.id)).orderBy(asc(battleTeams.id)),
       db.select().from(masterData).orderBy(asc(masterData.category), asc(masterData.name)),
       db.select().from(masterRelations).orderBy(asc(masterRelations.sourceId), asc(masterRelations.kind)),
     ]);
+    const memberRows = teamRows.length
+      ? await db.select().from(battleTeamMembers).where(inArray(battleTeamMembers.teamId, teamRows.map((team) => team.id))).orderBy(asc(battleTeamMembers.position))
+      : [];
+    const rosterById = new Map(rosterRows.map((entry) => [entry.id, rosterForClient(entry)]));
     return Response.json({
       user: auth.profile,
-      roster: rosterRows.map((row) => ({
-        ...row,
-        moves: safeJson<string[]>(row.moves, []),
-        stats: safeJson(row.stats, { hp: 80, attack: 80, defense: 80, spAttack: 80, spDefense: 80, speed: 80 }),
-      })),
+      roster: [...rosterById.values()],
       items: itemRows,
+      battleTeams: teamRows.map((team) => ({
+        ...team,
+        members: memberRows.filter((member) => member.teamId === team.id).map((member) => rosterById.get(member.rosterId)).filter(Boolean),
+      })),
       master: masterRows.map((row) => ({ ...row, data: safeJson(row.data, {}) })),
       masterRelations: relationRows.map((row) => ({ ...row, data: safeJson(row.data, {}) })),
     });
@@ -106,6 +119,48 @@ export async function POST(request: Request) {
 
     if (action === "delete-roster") {
       await db.delete(roster).where(and(eq(roster.id, Number(payload.id)), eq(roster.ownerId, auth.profile.id)));
+      return Response.json({ ok: true });
+    }
+
+    if (action === "save-battle-team") {
+      const name = String(payload.name ?? "").trim();
+      const memberIds = Array.isArray(payload.memberIds)
+        ? [...new Set(payload.memberIds.map(Number).filter((id) => Number.isInteger(id) && id > 0))]
+        : [];
+      if (!name || name.length > 40) return Response.json({ error: "チーム名は1〜40文字で入力する必要がある" }, { status: 400 });
+      if (memberIds.length !== 6) return Response.json({ error: "バトルチームには6体を選択する必要がある" }, { status: 400 });
+      const members = await db.select().from(roster)
+        .where(and(eq(roster.ownerId, auth.profile.id), inArray(roster.id, memberIds)));
+      if (members.length !== 6) return Response.json({ error: "ボックスにある6体を選択する必要がある" }, { status: 400 });
+      const pokemonMaster = await db.select({ name: masterData.name, data: masterData.data }).from(masterData)
+        .where(eq(masterData.category, "pokemon"));
+      const masterByName = new Map(pokemonMaster.map((entry) => [entry.name, safeJson<Record<string, unknown>>(entry.data, {})]));
+      const identities = new Set<string>();
+      for (const member of members) {
+        const data = masterByName.get(member.species);
+        const dexNo = Number(data?.dexNo);
+        const identity = Number.isInteger(dexNo) && dexNo > 0 ? `dex:${dexNo}` : `name:${member.species}`;
+        if (identities.has(identity)) return Response.json({ error: "同じポケモンをバトルチームに複数入れることはできない" }, { status: 400 });
+        identities.add(identity);
+      }
+      const id = Number(payload.id) || 0;
+      let teamId = id;
+      if (id) {
+        const existing = await db.select({ id: battleTeams.id }).from(battleTeams)
+          .where(and(eq(battleTeams.id, id), eq(battleTeams.ownerId, auth.profile.id))).limit(1);
+        if (!existing[0]) return Response.json({ error: "編集するチームが見つからない" }, { status: 404 });
+        await db.update(battleTeams).set({ name, updatedAt: new Date().toISOString() }).where(eq(battleTeams.id, id));
+        await db.delete(battleTeamMembers).where(eq(battleTeamMembers.teamId, id));
+      } else {
+        const [saved] = await db.insert(battleTeams).values({ ownerId: auth.profile.id, name, updatedAt: new Date().toISOString() }).returning();
+        teamId = saved.id;
+      }
+      await db.insert(battleTeamMembers).values(memberIds.map((rosterId, position) => ({ teamId, rosterId, position })));
+      return Response.json({ ok: true, id: teamId });
+    }
+
+    if (action === "delete-battle-team") {
+      await db.delete(battleTeams).where(and(eq(battleTeams.id, Number(payload.id)), eq(battleTeams.ownerId, auth.profile.id)));
       return Response.json({ ok: true });
     }
 
