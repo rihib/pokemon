@@ -1,5 +1,4 @@
 export type BattleFormat = "single" | "double";
-export type PlayStyle = "balance" | "attack" | "control" | "endurance";
 export type MasterCategory =
   | "pokemon"
   | "item"
@@ -74,7 +73,6 @@ export type AppState = {
     handle: string;
     role: "admin" | "user";
     preferredFormat: BattleFormat;
-    preferredStyle: PlayStyle;
   };
   roster: RosterEntry[];
   items: OwnedItem[];
