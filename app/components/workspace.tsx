@@ -110,6 +110,76 @@ function regulationPickCount(state: AppState, format: BattleFormat) {
     : format === "single" ? 3 : 4;
 }
 
+type MasterMaps = {
+  pokemonByName: Map<string, MasterEntry>;
+  moveByName: Map<string, MasterEntry>;
+  typeByName: Map<string, MasterEntry>;
+};
+
+type DirectMatchup = {
+  score: number;
+  bestOffense: number;
+  worstIncoming: number;
+  reasons: string[];
+};
+
+function splitTypes(value: string) {
+  return value.split(/[・/]/).map((type) => type.trim()).filter(Boolean);
+}
+
+function createMasterMaps(master: MasterEntry[]): MasterMaps {
+  return {
+    pokemonByName: new Map(master.filter((entry) => entry.category === "pokemon").map((entry) => [entry.name, entry])),
+    moveByName: new Map(master.filter((entry) => entry.category === "move").map((entry) => [entry.name, entry])),
+    typeByName: new Map(master.filter((entry) => entry.category === "type").map((entry) => [entry.name, entry])),
+  };
+}
+
+function combinedTypeMultiplier(attackType: string, defenseTypes: string[], maps: MasterMaps, relations: AppState["masterRelations"]) {
+  const attack = maps.typeByName.get(attackType);
+  if (!attack || !defenseTypes.length) return 1;
+  return defenseTypes.reduce((multiplier, defenseType) => {
+    const defense = maps.typeByName.get(defenseType);
+    if (!defense) return multiplier;
+    const relation = relations.find((candidate) =>
+      candidate.kind === "type_effectiveness" && candidate.sourceId === attack.id && candidate.targetId === defense.id,
+    );
+    return multiplier * Number(relation?.data?.multiplier ?? 1);
+  }, 1);
+}
+
+function directMatchup(mon: RosterEntry, opponent: MasterEntry, maps: MasterMaps, relations: AppState["masterRelations"]): DirectMatchup {
+  const opponentTypes = splitTypes(opponent.type);
+  const monTypes = splitTypes(mon.types);
+  const moveTypes = mon.moves
+    .map((move) => maps.moveByName.get(move)?.type)
+    .filter((type): type is string => Boolean(type && maps.typeByName.has(type)));
+  const bestOffense = moveTypes.length
+    ? Math.max(...moveTypes.map((moveType) => combinedTypeMultiplier(moveType, opponentTypes, maps, relations)))
+    : 1;
+  const worstIncoming = opponentTypes.length
+    ? Math.max(...opponentTypes.map((attackType) => combinedTypeMultiplier(attackType, monTypes, maps, relations)))
+    : 1;
+  let score = 0;
+  if (bestOffense >= 4) score += 60;
+  else if (bestOffense >= 2) score += 36;
+  else if (bestOffense >= 1) score += 8;
+  else if (bestOffense > 0) score -= 18;
+  else score -= 30;
+  if (worstIncoming <= 0.25) score += 32;
+  else if (worstIncoming <= 0.5) score += 22;
+  else if (worstIncoming <= 1) score += 8;
+  else if (worstIncoming <= 2) score -= 18;
+  else score -= 32;
+  const reasons: string[] = [];
+  if (bestOffense >= 4) reasons.push("4倍弱点を突ける");
+  else if (bestOffense >= 2) reasons.push("弱点を突ける");
+  else if (!moveTypes.length) reasons.push("技タイプが未登録");
+  if (worstIncoming <= 0.5) reasons.push("相手の主要タイプを半減以下にできる");
+  else if (worstIncoming >= 2) reasons.push("相手の主要タイプを受けにくい");
+  return { score, bestOffense, worstIncoming, reasons };
+}
+
 function chooseBattleTeam(
   roster: RosterEntry[],
   opponents: string[],
@@ -118,40 +188,41 @@ function chooseBattleTeam(
   master: MasterEntry[],
   relations: AppState["masterRelations"],
 ) {
-  const opponentText = opponents.join(" ");
-  const pokemonByName = new Map(master.filter((entry) => entry.category === "pokemon").map((entry) => [entry.name, entry]));
-  const moveByName = new Map(master.filter((entry) => entry.category === "move").map((entry) => [entry.name, entry]));
-  const typeByName = new Map(master.filter((entry) => entry.category === "type").map((entry) => [entry.name, entry]));
-  const opponentTypes = opponents.flatMap((name) => pokemonByName.get(name)?.type.split(/[・/]/).filter(Boolean) ?? []);
-  const multiplierFor = (attackType: string, defenseType: string) => {
-    const attack = typeByName.get(attackType);
-    const defense = typeByName.get(defenseType);
-    if (!attack || !defense) return 1;
-    const relation = relations.find((candidate) =>
-      candidate.kind === "type_effectiveness" &&
-      candidate.sourceId === attack.id &&
-      candidate.targetId === defense.id
-    );
-    return Number(relation?.data?.multiplier ?? 1);
-  };
+  const maps = createMasterMaps(master);
+  const knownOpponents = opponents.map((name) => maps.pokemonByName.get(name.trim())).filter((entry): entry is MasterEntry => Boolean(entry));
   return [...roster]
     .map((mon) => {
-      let score = numberScore(mon, style);
+      const matchups = knownOpponents.map((opponent) => directMatchup(mon, opponent, maps, relations));
+      const superEffective = matchups.filter((matchup) => matchup.bestOffense >= 2).length;
+      const safeMatchups = matchups.filter((matchup) => matchup.worstIncoming <= 0.5).length;
+      const score = numberScore(mon, style) * 0.12 + matchups.reduce((sum, matchup) => sum + matchup.score, 0);
       const advantages: string[] = [];
-      const moveTypes = mon.moves.map((move) => moveByName.get(move)?.type).filter((type): type is string => Boolean(type && typeByName.has(type)));
-      const bestMultiplier = Math.max(1, ...moveTypes.flatMap((attackType) => opponentTypes.map((defenseType) => multiplierFor(attackType, defenseType))));
-      if (bestMultiplier >= 2) {
-        score += bestMultiplier >= 4 ? 28 : 18;
-        advantages.push(bestMultiplier >= 4 ? "4倍弱点への打点" : "相手の弱点を突ける");
-      }
-      if (/ドラゴン|ガブリアス|カイリュー/.test(opponentText) && /フェアリー|こおり/.test(`${mon.types} ${mon.moves.join(" ")}`)) { score += 28; advantages.push("ドラゴンへの打点"); }
-      if (/はがね|サーフゴー/.test(opponentText) && /ほのお|じめん|ゴースト/.test(`${mon.types} ${mon.moves.join(" ")}`)) { score += 24; advantages.push("はがねへの打点"); }
-      if (/みず|アシレーヌ/.test(opponentText) && /くさ|でんき/.test(`${mon.types} ${mon.moves.join(" ")}`)) { score += 22; advantages.push("みずへの打点"); }
-      if (mon.stats.hp + mon.stats.defense + mon.stats.spDefense >= 270) { score += 8; advantages.push("選出の安定性"); }
+      if (superEffective) advantages.push(`${superEffective}体の弱点を突ける`);
+      if (safeMatchups) advantages.push(`${safeMatchups}体に有利な耐性`);
+      if (!knownOpponents.length) advantages.push("相手のタイプ情報が未登録");
+      if (mon.stats.hp + mon.stats.defense + mon.stats.spDefense >= 270) advantages.push("選出の安定性");
       return { mon, score, advantages };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, count);
+}
+
+function recommendAgainstLead(
+  selection: ReturnType<typeof chooseBattleTeam>,
+  enemyLead: string,
+  style: PlayStyle,
+  master: MasterEntry[],
+  relations: AppState["masterRelations"],
+) {
+  const maps = createMasterMaps(master);
+  const opponent = maps.pokemonByName.get(enemyLead.trim());
+  if (!opponent) return undefined;
+  return selection
+    .map(({ mon }) => {
+      const matchup = directMatchup(mon, opponent, maps, relations);
+      return { mon, score: matchup.score + numberScore(mon, style) * 0.12, reasons: matchup.reasons };
+    })
+    .sort((a, b) => b.score - a.score)[0];
 }
 
 export default function Workspace({ mode, identity }: { mode: "live" | "demo"; identity: { displayName: string; email: string } }) {
@@ -295,13 +366,10 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
     () => chooseBattleTeam(availableRoster, opponents, style, pickCount, state.master, state.masterRelations),
     [availableRoster, opponents, style, pickCount, state.master, state.masterRelations],
   );
-  const lead = useMemo(() => {
-    const candidates = selection.map((s) => s.mon);
-    return [...candidates].sort((a, b) => {
-      const enemyHint = enemyLead.includes("カイリュー") ? (m: RosterEntry) => /フェアリー|こおり/.test(`${m.types} ${m.moves.join(" ")}`) ? 30 : 0 : () => 0;
-      return numberScore(b, style) + enemyHint(b) - numberScore(a, style) - enemyHint(a);
-    })[0];
-  }, [selection, enemyLead, style]);
+  const lead = useMemo(
+    () => recommendAgainstLead(selection, enemyLead, style, state.master, state.masterRelations),
+    [selection, enemyLead, style, state.master, state.masterRelations],
+  );
 
   const isAdmin = state.user.role === "admin";
   const visibleRole: "admin" | "user" = isAdmin && !previewAsUser ? "admin" : "user";
@@ -502,7 +570,7 @@ function BuildPanel({ roster, format, style, pickCount, suggestions, selected, s
   </section>;
 }
 
-function BattlePanel({ format, style, pickCount, opponents, setOpponents, selection, enemyLead, setEnemyLead, lead, onRoster }: { format: BattleFormat; style: PlayStyle; pickCount: number; opponents: string[]; setOpponents: (v: string[]) => void; selection: ReturnType<typeof chooseBattleTeam>; enemyLead: string; setEnemyLead: (v: string) => void; lead?: RosterEntry; onRoster: () => void }) {
+function BattlePanel({ format, style, pickCount, opponents, setOpponents, selection, enemyLead, setEnemyLead, lead, onRoster }: { format: BattleFormat; style: PlayStyle; pickCount: number; opponents: string[]; setOpponents: (v: string[]) => void; selection: ReturnType<typeof chooseBattleTeam>; enemyLead: string; setEnemyLead: (v: string) => void; lead?: ReturnType<typeof recommendAgainstLead>; onRoster: () => void }) {
   const settingLabel = `${format === "single" ? "シングル" : "ダブル"}・${styleInfo[style].name}`;
   if (!selection.length) return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手の情報から、選出と先発を順番に提案する。" count={settingLabel} /><EmptyState title="まず手持ちを登録しよう" copy="選べるポケモンがないため、まだ提案を作れない。" action="手持ちを登録" onAction={onRoster} /></section>;
   return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手の6体を入力すると、上部で選んだ対戦設定に合わせて使用候補を提案する。" count={settingLabel} />
@@ -510,7 +578,7 @@ function BattlePanel({ format, style, pickCount, opponents, setOpponents, select
     <div className="battle-layout"><section className="panel opponent-panel"><div className="panel-head"><div><small>OPPONENT TEAM</small><h2>相手の6体</h2></div><span>入力は名前だけでOK</span></div><div className="opponent-grid">{opponents.map((value, i) => <label key={i}><span>{i + 1}</span><input value={value} onChange={(e) => { const next = [...opponents]; next[i] = e.target.value; setOpponents(next); }} placeholder="ポケモン名" /></label>)}</div></section>
       <section className="panel selection-panel"><div className="panel-head"><div><small>RECOMMENDED PICK</small><h2>この{pickCount}体がおすすめ</h2></div><span className="score-ring small">{Math.min(99, 78 + selection[0].advantages.length * 4)}</span></div>{selection.map((picked, i) => <div className={`selection-row ${i === 0 ? "best" : ""}`} key={picked.mon.id}><span className={`rank rank-${i + 1}`}>{i + 1}</span><MonsterTile mon={picked.mon} index={i} compact /><p>{picked.advantages.length ? picked.advantages.join("・") : "総合力と役割の安定性"}<small>{i === 0 ? "中心に選びたい" : "相手に応じて活躍"}</small></p></div>)}<p className="reason-card"><span>?</span><strong>選出理由</strong>相手への有効打と受け先を両立し、苦手な相手が重なりにくい{pickCount}体を優先した。</p></section>
     </div>
-    <section className="lead-panel"><div><small>STEP 03 / LEAD</small><h2>相手が最初に出したポケモンは？</h2><p>分かった時点で入力すると、選んだ{pickCount}体から先発または交代先を提案する。</p></div><input value={enemyLead} onChange={(e) => setEnemyLead(e.target.value)} placeholder="相手のポケモン名" />{lead && <div className="lead-result"><span>推奨</span><MonsterTile mon={lead} index={1} compact /><p><strong>{lead.nickname || lead.species}から始めよう</strong>素早さと相手への打点を評価。苦手なら無理せず交代する。</p></div>}</section>
+    <section className="lead-panel"><div><small>STEP 03 / RESPONSE</small><h2>相手が最初に出したポケモンは？</h2><p>選出済みの{pickCount}体から、技の打点と受けやすさの両方で最も有利なポケモンを提案する。</p></div><input value={enemyLead} onChange={(e) => setEnemyLead(e.target.value)} placeholder="マスターデータにあるポケモン名" />{lead && <div className="lead-result"><span>推奨</span><MonsterTile mon={lead.mon} index={1} compact /><p><strong>{lead.mon.nickname || lead.mon.species}を出そう</strong>{lead.reasons.length ? lead.reasons.join("・") : "打点と受けやすさを総合評価"}</p></div>}{enemyLead && !lead && <p className="lead-unavailable">相手のポケモンをマスターデータから選ぶと、タイプ相性を評価できる。</p>}</section>
   </section>;
 }
 
