@@ -6,6 +6,7 @@ export type MasterCategory =
   | "move"
   | "nature"
   | "type"
+  | "archived"
   | "regulation";
 export type MasterRelationKind =
   | "learns_move"
