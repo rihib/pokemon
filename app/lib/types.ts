@@ -6,7 +6,6 @@ export type MasterCategory =
   | "move"
   | "nature"
   | "type"
-  | "form"
   | "regulation";
 export type MasterRelationKind =
   | "learns_move"
@@ -14,8 +13,7 @@ export type MasterRelationKind =
   | "form_of"
   | "type_effectiveness"
   | "allows_pokemon"
-  | "allows_item"
-  | "allows_form";
+  | "allows_item";
 
 export type Stats = {
   hp: number;
