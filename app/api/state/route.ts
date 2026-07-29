@@ -107,6 +107,7 @@ export async function POST(request: Request) {
       const availableRelations = await db.select().from(masterRelations);
       const species = String(payload.species ?? "").trim();
       const speciesMaster = availableMaster.find((entry) => entry.category === "pokemon" && entry.name === species);
+      const id = Number(payload.id) || 0;
       const ability = String(payload.ability ?? "").trim();
       const heldItem = String(payload.heldItem ?? "").trim();
       const nature = String(payload.nature ?? "").trim();
@@ -115,6 +116,11 @@ export async function POST(request: Request) {
       const existsInMaster = (category: "item" | "ability" | "move" | "nature", name: string) =>
         !name || availableMaster.some((entry) => entry.category === category && entry.name === name);
       if (!speciesMaster) return Response.json({ error: "マスターデータに登録されたポケモンを選択する必要がある" }, { status: 400 });
+      const matchingRoster = await db.select({ id: roster.id }).from(roster)
+        .where(and(eq(roster.ownerId, auth.profile.id), eq(roster.species, species))).limit(2);
+      if (matchingRoster.some((entry) => entry.id !== id)) {
+        return Response.json({ error: "同じポケモンを複数登録することはできない" }, { status: 409 });
+      }
       const linkedAbilityIds = availableRelations
         .filter((relation) => relation.sourceId === speciesMaster.id && relation.kind === "has_ability")
         .map((relation) => relation.targetId);
@@ -161,7 +167,6 @@ export async function POST(request: Request) {
         notes: String(payload.notes ?? "").trim(),
         updatedAt: new Date().toISOString(),
       };
-      const id = Number(payload.id);
       const [saved] = id
         ? await db.update(roster).set(values).where(and(eq(roster.id, id), eq(roster.ownerId, auth.profile.id))).returning()
         : await db.insert(roster).values(values).returning();
