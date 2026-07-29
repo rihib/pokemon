@@ -9,15 +9,30 @@ function safeJson<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
+async function insertInBatches<T>(
+  values: T[],
+  insert: (batch: T[]) => Promise<unknown>,
+  batchSize = 10,
+) {
+  for (let start = 0; start < values.length; start += batchSize) {
+    await insert(values.slice(start, start + batchSize));
+  }
+}
+
 async function seedBaselineMaster() {
   const db = await getDb();
-  await db.insert(masterData).values(demoMaster.map((entry) => ({
+  const masterValues = demoMaster.map((entry) => ({
     category: entry.category,
     name: entry.name,
     type: entry.type,
     description: entry.description,
     data: JSON.stringify(entry.data ?? {}),
-  }))).onConflictDoNothing();
+  }));
+  // D1 has a small bound-parameter limit.  Initial master data is deliberately
+  // inserted in small chunks so a fresh database can always be initialized.
+  await insertInBatches(masterValues, (batch) =>
+    db.insert(masterData).values(batch).onConflictDoNothing(),
+  );
 
   const persisted = await db.select().from(masterData);
   const demoById = new Map(demoMaster.map((entry) => [entry.id, entry]));
@@ -37,7 +52,9 @@ async function seedBaselineMaster() {
     }];
   });
   if (relationValues.length) {
-    await db.insert(masterRelations).values(relationValues).onConflictDoNothing();
+    await insertInBatches(relationValues, (batch) =>
+      db.insert(masterRelations).values(batch).onConflictDoNothing(),
+    );
   }
 }
 
@@ -65,7 +82,8 @@ export async function GET() {
       masterRelations: relationRows.map((row) => ({ ...row, data: safeJson(row.data, {}) })),
     });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "データを読み込めなかった" }, { status: 500 });
+    console.error("Failed to load application state", error);
+    return Response.json({ error: "初期データを読み込めなかった。再読み込みしても解決しない場合は、時間をおいてもう一度試してほしい。" }, { status: 500 });
   }
 }
 
@@ -315,6 +333,7 @@ export async function POST(request: Request) {
 
     return Response.json({ error: "未対応の操作である" }, { status: 400 });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "操作に失敗した" }, { status: 500 });
+    console.error("Failed to update application state", error);
+    return Response.json({ error: "操作を保存できなかった。再度試しても解決しない場合は、時間をおいてもう一度試してほしい。" }, { status: 500 });
   }
 }
