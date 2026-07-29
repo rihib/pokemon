@@ -50,6 +50,13 @@
       "when": 1785307293576,
       "tag": "0006_seed_champions_master",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1785308660816,
+      "tag": "0007_complete_champions_forms",
+      "breakpoints": true
     }
   ]
 }
