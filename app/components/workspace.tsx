@@ -42,6 +42,7 @@ const styleInfo: Record<PlayStyle, { name: string; copy: string; forWhom: string
 
 const emptyStats: Stats = { hp: 80, attack: 80, defense: 80, spAttack: 80, spDefense: 80, speed: 80 };
 const emptyRoster = (): RosterEntry => ({ id: 0, species: "", nickname: "", types: "", ability: "", heldItem: "", nature: "", form: "", megaEvolution: false, moves: ["", "", "", ""], stats: { ...emptyStats }, notes: "" });
+const userError = "エラーが発生しました。";
 function numberScore(mon: RosterEntry, style: PlayStyle) {
   const s = mon.stats;
   const offense = Math.max(s.attack, s.spAttack);
@@ -181,12 +182,13 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
     try {
       const response = await fetch("/api/state", { cache: "no-store" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "読み込みに失敗した");
+      if (!response.ok) throw new Error(userError);
       setState(data);
       setFormat(data.user.preferredFormat);
       setStyle(data.user.preferredStyle);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "読み込みに失敗した");
+      console.error("Failed to load application state", e);
+      setError(userError);
     } finally { setLoading(false); }
   };
 
@@ -196,7 +198,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
     fetch("/api/state", { cache: "no-store" })
       .then(async (response) => {
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "読み込みに失敗した");
+        if (!response.ok) throw new Error(userError);
         return data as AppState;
       })
       .then((data) => {
@@ -205,7 +207,10 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
         setFormat(data.user.preferredFormat);
         setStyle(data.user.preferredStyle);
       })
-      .catch((e: unknown) => { if (active) setError(e instanceof Error ? e.message : "読み込みに失敗した"); })
+      .catch((e: unknown) => {
+        console.error("Failed to load application state", e);
+        if (active) setError(userError);
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [mode]);
@@ -230,13 +235,17 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
     try {
       const response = await fetch("/api/state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, payload }) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "保存に失敗した");
+      if (!response.ok) throw new Error(userError);
       if (data.signOut) window.location.href = data.signOut;
       else await refresh();
       setNotice("保存した");
       window.setTimeout(() => setNotice(""), 1800);
       return true;
-    } catch (e) { setError(e instanceof Error ? e.message : "保存に失敗した"); return false; }
+    } catch (e) {
+      console.error("Failed to save application state", e);
+      setError(userError);
+      return false;
+    }
   };
 
   const saveBattlePreferences = async (nextFormat: BattleFormat, nextStyle: PlayStyle) => {
@@ -261,7 +270,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
         body: JSON.stringify({ action: "save-profile", payload: { preferredFormat: nextFormat, preferredStyle: nextStyle } }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "対戦設定の保存に失敗した");
+      if (!response.ok) throw new Error(userError);
       setState((current) => ({ ...current, user: { ...current.user, ...data.saved } }));
       setNotice("対戦設定を保存した");
       window.setTimeout(() => setNotice(""), 1800);
@@ -272,7 +281,8 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
         ...current,
         user: { ...current.user, preferredFormat: previousFormat, preferredStyle: previousStyle },
       }));
-      setError(e instanceof Error ? e.message : "対戦設定の保存に失敗した");
+      console.error("Failed to save battle preferences", e);
+      setError(userError);
     } finally {
       setSavingPreferences(false);
     }
@@ -531,7 +541,7 @@ function SettingsPanel({ state, visibleRole, format, style, mode, onSave, onDele
           signal: controller.signal,
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "確認に失敗した");
+        if (!response.ok) throw new Error(userError);
         setHandleStatus(data.available ? "available" : data.reason === "format" ? "invalid" : "taken");
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
