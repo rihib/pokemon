@@ -11,8 +11,8 @@ const tabMeta: { id: Tab; label: string; icon: string }[] = [
   { id: "home", label: "ホーム", icon: "⌂" },
   { id: "roster", label: "ボックス", icon: "◈" },
   { id: "items", label: "持ち物", icon: "▣" },
-  { id: "build", label: "バトルチーム構築", icon: "◇" },
   { id: "teams", label: "マイチーム", icon: "◉" },
+  { id: "build", label: "チーム構築", icon: "◇" },
   { id: "battle", label: "対戦ナビ", icon: "◎" },
   { id: "settings", label: "アカウント", icon: "○" },
 ];
@@ -26,6 +26,27 @@ function numberScore(mon: RosterEntry) {
   const offense = Math.max(s.attack, s.spAttack);
   const bulk = s.hp * .35 + s.defense * .325 + s.spDefense * .325;
   return offense * .32 + bulk * .35 + s.speed * .23 + (mon.megaEvolution ? 8 : 0);
+}
+
+type SuggestionProfile = "balanced" | "offense" | "bulk";
+
+function scoreForProfile(mon: RosterEntry, profile: SuggestionProfile) {
+  const stats = mon.stats;
+  const offense = Math.max(stats.attack, stats.spAttack);
+  const bulk = stats.hp * .35 + stats.defense * .325 + stats.spDefense * .325;
+  if (profile === "offense") return offense * .48 + stats.speed * .38 + bulk * .14 + (mon.megaEvolution ? 8 : 0);
+  if (profile === "bulk") return bulk * .55 + offense * .23 + stats.speed * .12 + (mon.megaEvolution ? 8 : 0);
+  return numberScore(mon);
+}
+
+function teamScore(members: RosterEntry[], profile: SuggestionProfile) {
+  if (!members.length) return 0;
+  const average = members.reduce((sum, mon) => sum + scoreForProfile(mon, profile), 0) / members.length;
+  return Math.min(99, Math.round(average / 1.4));
+}
+
+function typeCoverage(members: RosterEntry[]) {
+  return new Set(members.flatMap((mon) => mon.types.split(/[・/]/).filter(Boolean))).size;
 }
 
 function pokemonIdentity(mon: RosterEntry, master: MasterEntry[]) {
@@ -45,14 +66,7 @@ function createSuggestions(roster: RosterEntry[], format: BattleFormat, master: 
     { title: "安定した構成", tone: "耐久力とタイプの分散を優先", profile: "bulk" },
   ] as const;
   return variants.map((variant) => {
-    const scoreFor = (mon: RosterEntry) => {
-      const stats = mon.stats;
-      const offense = Math.max(stats.attack, stats.spAttack);
-      const bulk = stats.hp * .35 + stats.defense * .325 + stats.spDefense * .325;
-      if (variant.profile === "offense") return offense * .48 + stats.speed * .38 + bulk * .14 + (mon.megaEvolution ? 8 : 0);
-      if (variant.profile === "bulk") return bulk * .55 + offense * .23 + stats.speed * .12 + (mon.megaEvolution ? 8 : 0);
-      return numberScore(mon);
-    };
+    const scoreFor = (mon: RosterEntry) => scoreForProfile(mon, variant.profile);
     const sorted = [...roster].sort((a, b) => scoreFor(b) - scoreFor(a));
     const picked: RosterEntry[] = [];
     const usedTypes = new Set<string>();
@@ -73,8 +87,8 @@ function createSuggestions(roster: RosterEntry[], format: BattleFormat, master: 
       picked.push(mon);
       usedSpecies.add(identity);
     }
-    const avg = picked.length ? Math.round(picked.reduce((sum, mon) => sum + scoreFor(mon), 0) / picked.length) : 0;
-    return { ...variant, members: picked.slice(0, 6), score: Math.min(99, Math.round(avg / 1.4)), reason: reasonFor(variant.profile, format, picked) };
+    const members = picked.slice(0, 6);
+    return { ...variant, members, score: teamScore(members, variant.profile), reason: reasonFor(variant.profile, format, picked) };
   });
 }
 
@@ -575,7 +589,7 @@ export default function Workspace({ mode, identity }: { mode: "live" | "demo"; i
                 rollback: () => { if (removed) setState((current) => current.items.some((item) => item.id === id) ? current : ({ ...current, items: [...current.items, removed].sort((a, b) => a.id - b.id) })); },
               });
             }} />}
-            {tab === "build" && <BuildPanel roster={availableRoster} items={state.items} master={state.master} masterRelations={state.masterRelations} format={format} pickCount={pickCount} suggestions={suggestions} selected={selectedSuggestion} setSelected={setSelectedSuggestion} onRoster={() => setTab("roster")} />}
+            {tab === "build" && <BuildPanel roster={availableRoster} items={state.items} master={state.master} masterRelations={state.masterRelations} selectedTeam={selectedBattleTeam} format={format} pickCount={pickCount} suggestions={suggestions} selected={selectedSuggestion} setSelected={setSelectedSuggestion} onRoster={() => setTab("roster")} />}
             {tab === "teams" && <BattleTeamsPanel teams={state.battleTeams} roster={state.roster} activeTeamId={selectedBattleTeamId} onCreate={() => setTeamEditor(emptyBattleTeam())} onEdit={(team) => setTeamEditor({ id: team.id, name: team.name, memberIds: team.members.map((member) => member.id) })} onUse={(id) => { setSelectedBattleTeamId(id); setTab("battle"); }} onDelete={(id) => {
               const removed = state.battleTeams.find((team) => team.id === id);
               void mutate("delete-battle-team", { id }, {
@@ -626,7 +640,7 @@ function Dashboard({ state, onGo, suggestions }: { state: AppState; onGo: (tab: 
       </section>
       <section className="next-step-card">
         <span className="big-step">01</span>
-        <div><small>NEXT STEP</small><h2>{distinctPokemonCount(state.roster, state.master) < 6 ? "ボックスに異なるポケモンを6体登録しよう" : !state.battleTeams.length ? "実際に使うマイチームを登録しよう" : "対戦ナビで選出を確認しよう"}</h2><p>{distinctPokemonCount(state.roster, state.master) < 6 ? "同じポケモンを複数登録できる。バトルチームには異なるポケモンが6体必要である。" : !state.battleTeams.length ? "バトルチーム構築の提案とは別に、実際に対戦で使う6体を保存する。複数チームを登録できる。" : "登録したマイチームを選び、相手の6体に対する選出を確認する。"}</p></div>
+        <div><small>NEXT STEP</small><h2>{distinctPokemonCount(state.roster, state.master) < 6 ? "ボックスに異なるポケモンを6体登録しよう" : !state.battleTeams.length ? "実際に使うマイチームを登録しよう" : "対戦ナビで選出を確認しよう"}</h2><p>{distinctPokemonCount(state.roster, state.master) < 6 ? "同じポケモンを複数登録できる。チームには異なるポケモンが6体必要である。" : !state.battleTeams.length ? "チーム構築の提案とは別に、実際に対戦で使う6体を保存する。複数チームを登録できる。" : "登録したマイチームを選び、相手の6体に対する選出を確認する。"}</p></div>
         <button onClick={() => onGo(distinctPokemonCount(state.roster, state.master) < 6 ? "roster" : !state.battleTeams.length ? "teams" : "battle")}>{distinctPokemonCount(state.roster, state.master) < 6 ? "ボックスに登録" : !state.battleTeams.length ? "チームを作成" : "対戦ナビへ"} <span>→</span></button>
       </section>
       <div className="dashboard-grid">
@@ -664,25 +678,30 @@ function ItemsPanel({ items, onEdit, onDelete }: { items: OwnedItem[]; onEdit: (
     {!items.length && <EmptyState title="持ち物が登録されていない" copy="持っている数を登録すると、同じ持ち物の使いすぎを防げる。" />}</section>;
 }
 
-function BuildPanel({ roster, items, master, masterRelations, format, pickCount, suggestions, selected, setSelected, onRoster }: { roster: RosterEntry[]; items: OwnedItem[]; master: MasterEntry[]; masterRelations: AppState["masterRelations"]; format: BattleFormat; pickCount: number; suggestions: ReturnType<typeof createSuggestions>; selected: number; setSelected: (v: number) => void; onRoster: () => void }) {
+function BuildPanel({ roster, items, master, masterRelations, selectedTeam, format, pickCount, suggestions, selected, setSelected, onRoster }: { roster: RosterEntry[]; items: OwnedItem[]; master: MasterEntry[]; masterRelations: AppState["masterRelations"]; selectedTeam?: BattleTeam; format: BattleFormat; pickCount: number; suggestions: ReturnType<typeof createSuggestions>; selected: number; setSelected: (v: number) => void; onRoster: () => void }) {
   const uniqueSpeciesCount = distinctPokemonCount(roster, master);
   const ready = uniqueSpeciesCount >= 6;
-  const acquisitionAdvice = suggestions[selected]
-    ? createAcquisitionAdvice(suggestions[selected].members, items, master, masterRelations, format)
+  const selectedSuggestion = suggestions[selected];
+  const acquisitionAdvice = selectedSuggestion
+    ? createAcquisitionAdvice(selectedSuggestion.members, items, master, masterRelations, format)
     : [];
+  const currentTeamScore = selectedTeam && selectedSuggestion ? teamScore(selectedTeam.members, selectedSuggestion.profile) : 0;
+  const currentTypeCount = selectedTeam ? typeCoverage(selectedTeam.members) : 0;
+  const suggestedTypeCount = selectedSuggestion ? typeCoverage(selectedSuggestion.members) : 0;
+  const scoreDifference = currentTeamScore - (selectedSuggestion?.score ?? 0);
   return <section>
     <PageTitle
-      eyebrow="BATTLE TEAM BUILDER"
-      title="バトルチーム構築"
+      eyebrow="TEAM BUILDER"
+      title="チーム構築"
       copy={ready ? "上部で選んだ対戦形式に合わせて3案を提案する。ここは検討用の候補であり、対戦ナビで使う実在のマイチームとは別である。" : "上部の対戦形式に合わせ、ボックスに異なるポケモンが6体そろったら構築を提案する。"}
       count={format === "single" ? "シングル" : "ダブル"}
     />
     {!ready ? (
-      <EmptyState title={`あと${6 - uniqueSpeciesCount}種類登録すると提案できる`} copy="同じポケモンはボックスに複数登録できるが、バトルチームには1体しか入れられない。" action="ボックスに登録" onAction={onRoster} />
+      <EmptyState title={`あと${6 - uniqueSpeciesCount}種類登録すると提案できる`} copy="同じポケモンはボックスに複数登録できるが、チームには1体しか入れられない。" action="ボックスに登録" onAction={onRoster} />
     ) : (
       <>
         <div className="suggestion-tabs">{suggestions.map((s, i) => <button key={`${s.title}-${i}`} className={selected === i ? "active" : ""} onClick={() => setSelected(i)}><small>PLAN {String(i + 1).padStart(2, "0")}</small><strong>{s.title}</strong><span>{s.tone}</span><b>{s.score}<em>/100</em></b></button>)}</div>
-        {suggestions[selected] && <article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "構築の提案候補" : "別の構築候補"}</span><h2>{suggestions[selected].title}バトルチーム</h2></div><p><span>?</span><strong>この提案の理由</strong>{suggestions[selected].reason}</p></div><div className="suggested-party">{suggestions[selected].members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><section className="acquisition-advice"><header><small>HOW TO IMPROVE</small><h2>次に取得すると強くなるもの</h2><p>この構築候補の弱点・タイプ範囲・能力値・持ち物在庫から、次の一手を提案する。</p></header><div>{acquisitionAdvice.map((advice) => <article key={advice.label}><small>{advice.label}</small><h3>{advice.title}</h3><p>{advice.copy}</p><ul>{advice.points.map((point) => <li key={point}>{point}</li>)}</ul></article>)}</div></section><div className="beginner-explain"><strong>使い方の目安</strong><span>① 提案を構築検討に使う</span><span>② 実際に使う6体は「マイチーム」に登録する</span><span>③ 対戦ナビは登録したマイチームから選出する</span></div></article>}
+        {selectedSuggestion && <><section className="team-comparison"><header><div><small>CURRENT MY TEAM</small><h2>{selectedTeam ? selectedTeam.name : "マイチームが未登録"}</h2><p>{selectedTeam ? "選択中のマイチームを、いま選んでいる提案と同じ評価軸で比較する。" : "マイチームを登録すると、提案とのスコア差とタイプの幅を確認できる。"}</p></div>{selectedTeam && <b>{currentTeamScore}<em>/100</em></b>}</header>{selectedTeam && <div><article><small>スコア差</small><strong className={scoreDifference >= 0 ? "positive" : "negative"}>{scoreDifference >= 0 ? "+" : ""}{scoreDifference} pts</strong><span>提案 {selectedSuggestion.score} pts</span></article><article><small>タイプの幅</small><strong>{currentTypeCount} 種類</strong><span>提案 {suggestedTypeCount} 種類</span></article><article><small>メンバー構成</small><strong>{selectedTeam.members.length} / 6</strong><span>提案と見比べて調整</span></article></div>}</section><article className="suggestion-detail"><div className="suggestion-heading"><div><span className="recommend-badge">{selected === 0 ? "構築の提案候補" : "別の構築候補"}</span><h2>{selectedSuggestion.title}チーム</h2></div><p><span>?</span><strong>この提案の理由</strong>{selectedSuggestion.reason}</p></div><div className="suggested-party">{selectedSuggestion.members.map((mon, i) => <MonsterTile key={mon.id} mon={mon} index={i} />)}</div><section className="acquisition-advice"><header><small>HOW TO IMPROVE</small><h2>次に取得すると強くなるもの</h2><p>この構築候補の弱点・タイプ範囲・能力値・持ち物在庫から、次の一手を提案する。</p></header><div>{acquisitionAdvice.map((advice) => <article key={advice.label}><small>{advice.label}</small><h3>{advice.title}</h3><p>{advice.copy}</p><ul>{advice.points.map((point) => <li key={point}>{point}</li>)}</ul></article>)}</div></section><div className="beginner-explain"><strong>使い方の目安</strong><span>① 提案を構築検討に使う</span><span>② 実際に使う6体は「マイチーム」に登録する</span><span>③ 対戦ナビは登録したマイチームから選出する</span></div></article></>}
       </>
     )}
   </section>;
@@ -698,7 +717,7 @@ function BattleTeamsPanel({ teams, roster, activeTeamId, onCreate, onEdit, onUse
 
 function BattlePanel({ format, pickCount, teams, selectedTeam, onSelectTeam, onManageTeams, opponents, setOpponents, selection, enemyLead, setEnemyLead, lead }: { format: BattleFormat; pickCount: number; teams: BattleTeam[]; selectedTeam?: BattleTeam; onSelectTeam: (id: number) => void; onManageTeams: () => void; opponents: string[]; setOpponents: (v: string[]) => void; selection: ReturnType<typeof chooseBattleTeam>; enemyLead: string; setEnemyLead: (v: string) => void; lead?: ReturnType<typeof recommendAgainstLead> }) {
   const settingLabel = format === "single" ? "シングル" : "ダブル";
-  if (!selectedTeam) return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="実際に使用するマイチームを選んでから、相手への選出を提案する。" count={settingLabel} /><EmptyState title="マイチームを選択しよう" copy="バトルチーム構築の提案ではなく、自分で登録した6体のチームを対戦ナビの前提にする。" action={teams.length ? "マイチームを選ぶ" : "チームを作成"} onAction={onManageTeams} /></section>;
+  if (!selectedTeam) return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="実際に使用するマイチームを選んでから、相手への選出を提案する。" count={settingLabel} /><EmptyState title="マイチームを選択しよう" copy="チーム構築の提案ではなく、自分で登録した6体のチームを対戦ナビの前提にする。" action={teams.length ? "マイチームを選ぶ" : "チームを作成"} onAction={onManageTeams} /></section>;
   return <section><PageTitle eyebrow="BATTLE NAVI" title="対戦ナビ" copy="相手バトルチームのポケモン名を入力すると、選択中のマイチーム6体だけから選出を提案する。" count={settingLabel} />
     <section className="panel active-team-panel"><div><small>USING MY BATTLE TEAM</small><h2>{selectedTeam.name}</h2><p>この6体を前提に、相手への選出と先発を提案する。</p></div>{teams.length > 1 && <label>使用するチーム<select value={selectedTeam.id} onChange={(event) => onSelectTeam(Number(event.target.value))}>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>}<div className="active-team-members">{selectedTeam.members.map((member, index) => <MonsterTile key={member.id} mon={member} index={index} compact />)}</div><button onClick={onManageTeams}>マイチームを管理</button></section>
     <div className="battle-flow"><span className="done">1<small>相手の6体</small></span><i></i><span className="done">2<small>{pickCount}体を選出</small></span><i></i><span>3<small>先発を決定</small></span></div>
@@ -761,7 +780,7 @@ function SettingsPanel({ state, visibleRole, format, mode, onSave, onDelete }: {
 
   return <section><PageTitle eyebrow="ACCOUNT" title="アカウント設定" copy="表示名、ユーザー名と対戦形式を確認・変更できる。" />
     <div className="settings-grid"><section className="panel settings-card"><div className="settings-heading"><h2>プロフィール</h2><span className={`role-status ${visibleRole}`}>{visibleRole === "admin" ? "管理者アカウント" : "一般アカウント"}</span></div><label>表示名<input value={name} maxLength={40} onChange={(e) => setName(e.target.value)} /></label><label>ユーザー名<input value={handle} maxLength={24} onChange={(e) => { setHandle(e.target.value.replace(/^@/, "").toLowerCase()); setHandleStatus("checking"); }} autoCapitalize="none" aria-describedby="handle-availability" /><small id="handle-availability" className={`field-hint handle-${effectiveHandleStatus}`} aria-live="polite">{handleMessage}</small></label><label>メールアドレス<input type="email" value={state.user.email} disabled /><small className="field-hint">ChatGPTアカウントから取得するため、このサービス内では変更できない。</small></label><button className="form-primary" disabled={!name.trim() || effectiveHandleStatus !== "available"} onClick={() => onSave({ displayName: name, handle })}>変更を保存</button></section>
-      <section className="panel settings-card"><h2>対戦設定</h2><p>現在の設定。画面上部から変更すると、バトルチーム構築と対戦ナビへすぐに反映される。</p><div className="setting-summary"><span>対戦形式<strong>{format === "single" ? "シングル" : "ダブル"}</strong></span></div></section>
+      <section className="panel settings-card"><h2>対戦設定</h2><p>現在の設定。画面上部から変更すると、チーム構築と対戦ナビへすぐに反映される。</p><div className="setting-summary"><span>対戦形式<strong>{format === "single" ? "シングル" : "ダブル"}</strong></span></div></section>
       <section className="panel danger-zone"><h2>ログアウト・削除</h2><p>ログアウトしても登録データは残る。アカウント削除はボックスと持ち物を含む全データを削除する。</p>{mode === "live" ? <><a href="/signout-with-chatgpt?return_to=%2F">ログアウト</a>{confirmDelete ? <button className="danger-button" onClick={onDelete}>本当に削除する</button> : <button className="danger-link" onClick={() => setConfirmDelete(true)}>アカウントを削除</button>}</> : <Link href="/">体験版を終了</Link>}</section>
     </div>
   </section>;
