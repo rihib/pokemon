@@ -14,6 +14,7 @@ command -v timeout >/dev/null || {
 
 node "${script_dir}/patch-battle-pokemon-search.mjs"
 node "${script_dir}/patch-battle-scoring-speed.mjs"
+node "${script_dir}/patch-matchup-navigator.mjs"
 
 vinext="${SITES_PROJECT_ROOT}/node_modules/.bin/vinext"
 if [[ ! -x "${vinext}" ]]; then
