@@ -5,6 +5,11 @@ const root = process.env.SITES_PROJECT_ROOT || process.cwd();
 const workspacePath = path.join(root, "app/components/workspace.tsx");
 let source = fs.readFileSync(workspacePath, "utf8");
 
+if (source.includes("function speedModifier(speed: number, lead = false)")) {
+  console.log("Battle scoring speed patch already applied.");
+  process.exit(0);
+}
+
 function replaceOnce(pattern, replacement, label) {
   const next = source.replace(pattern, replacement);
   if (next === source) throw new Error(`Could not patch ${label}. The source structure has changed.`);
