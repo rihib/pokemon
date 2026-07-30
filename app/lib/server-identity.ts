@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../../db";
 import { authIdentities, users } from "../../db/schema";
-import { getChatGPTUser } from "../chatgpt-auth";
+import { getSessionIdentity } from "./auth";
 
 const ADMIN_USER_ID = 1;
 
@@ -21,7 +21,7 @@ export function publicProfile<T extends typeof users.$inferSelect>(profile: T) {
 }
 
 export async function requireAppIdentity() {
-  const identity = await getChatGPTUser();
+  const identity = await getSessionIdentity();
   if (!identity) return null;
 
   const db = await getDb();
@@ -31,25 +31,34 @@ export async function requireAppIdentity() {
     .from(authIdentities)
     .innerJoin(users, eq(authIdentities.userId, users.id))
     .where(and(
-      eq(authIdentities.provider, "chatgpt"),
-      eq(authIdentities.providerEmail, providerEmail),
+      eq(authIdentities.provider, "google"),
+      eq(authIdentities.providerUserId, identity.providerUserId),
     ))
     .limit(1);
 
   if (linked[0]) {
+    if (linked[0].profile.email !== providerEmail) {
+      await db.update(users).set({ email: providerEmail }).where(eq(users.id, linked[0].profile.id));
+      linked[0].profile.email = providerEmail;
+    }
     return { identity, profile: publicProfile(linked[0].profile) };
+  }
+
+  const legacyByEmail = await db
+    .select({ identityId: authIdentities.id, profile: users })
+    .from(authIdentities)
+    .innerJoin(users, eq(authIdentities.userId, users.id))
+    .where(eq(authIdentities.providerEmail, providerEmail))
+    .limit(1);
+  if (legacyByEmail[0]) {
+    await db.update(authIdentities).set({ provider: "google", providerUserId: identity.providerUserId, providerEmail }).where(eq(authIdentities.id, legacyByEmail[0].identityId));
+    return { identity, profile: publicProfile(legacyByEmail[0].profile) };
   }
 
   const baseHandle = handleFrom(providerEmail, identity.displayName);
   let handle = baseHandle;
-  const collision = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.handle, handle))
-    .limit(1);
-  if (collision[0]) {
-    handle = `${baseHandle}-${Math.random().toString(36).slice(2, 6)}`;
-  }
+  const collision = await db.select({ id: users.id }).from(users).where(eq(users.handle, handle)).limit(1);
+  if (collision[0]) handle = `${baseHandle}-${Math.random().toString(36).slice(2, 6)}`;
 
   const [profile] = await db.insert(users).values({
     email: providerEmail,
@@ -57,7 +66,8 @@ export async function requireAppIdentity() {
     handle,
   }).returning();
   await db.insert(authIdentities).values({
-    provider: "chatgpt",
+    provider: "google",
+    providerUserId: identity.providerUserId,
     providerEmail,
     userId: profile.id,
   });
