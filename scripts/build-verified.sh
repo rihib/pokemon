@@ -12,6 +12,8 @@ command -v timeout >/dev/null || {
   exit 69
 }
 
+node "${script_dir}/patch-battle-pokemon-search.mjs"
+
 vinext="${SITES_PROJECT_ROOT}/node_modules/.bin/vinext"
 if [[ ! -x "${vinext}" ]]; then
   echo "vinext is unavailable. Run npm run install:ci and wait for it to finish before building." >&2
