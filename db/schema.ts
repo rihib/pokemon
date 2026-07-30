@@ -15,20 +15,20 @@ export const users = sqliteTable("users", {
 
 export const authIdentities = sqliteTable("auth_identities", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  provider: text("provider").notNull().default("chatgpt"),
+  provider: text("provider").notNull().default("google"),
+  providerUserId: text("provider_user_id"),
   providerEmail: text("provider_email").notNull(),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
+  uniqueIndex("auth_provider_user_idx").on(table.provider, table.providerUserId),
   uniqueIndex("auth_provider_email_idx").on(table.provider, table.providerEmail),
   index("auth_user_idx").on(table.userId),
 ]);
 
 export const masterData = sqliteTable("master_data", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  category: text("category", {
-    enum: ["pokemon", "item", "ability", "move", "nature", "type", "archived", "regulation"],
-  }).notNull(),
+  category: text("category", { enum: ["pokemon", "item", "ability", "move", "nature", "type", "archived", "regulation"] }).notNull(),
   name: text("name").notNull(),
   type: text("type").notNull().default(""),
   description: text("description").notNull().default(""),
@@ -44,16 +44,7 @@ export const masterRelations = sqliteTable("master_relations", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   sourceId: integer("source_id").notNull().references(() => masterData.id, { onDelete: "cascade" }),
   targetId: integer("target_id").notNull().references(() => masterData.id, { onDelete: "cascade" }),
-  kind: text("kind", {
-    enum: [
-      "learns_move",
-      "has_ability",
-      "form_of",
-      "type_effectiveness",
-      "allows_pokemon",
-      "allows_item",
-    ],
-  }).notNull(),
+  kind: text("kind", { enum: ["learns_move", "has_ability", "form_of", "type_effectiveness", "allows_pokemon", "allows_item"] }).notNull(),
   data: text("data").notNull().default("{}"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [
@@ -78,9 +69,7 @@ export const roster = sqliteTable("roster", {
   notes: text("notes").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [
-  index("roster_owner_idx").on(table.ownerId),
-]);
+}, (table) => [index("roster_owner_idx").on(table.ownerId)]);
 
 export const battleTeams = sqliteTable("battle_teams", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -88,9 +77,7 @@ export const battleTeams = sqliteTable("battle_teams", {
   name: text("name").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [
-  index("battle_teams_owner_idx").on(table.ownerId),
-]);
+}, (table) => [index("battle_teams_owner_idx").on(table.ownerId)]);
 
 export const battleTeamMembers = sqliteTable("battle_team_members", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -111,6 +98,4 @@ export const ownedItems = sqliteTable("owned_items", {
   notes: text("notes").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [
-  index("items_owner_idx").on(table.ownerId),
-]);
+}, (table) => [index("items_owner_idx").on(table.ownerId)]);
