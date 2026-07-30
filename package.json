@@ -6,14 +6,19 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "install:ci": "bash scripts/install-ci.sh",
-    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
-    "build": "bash scripts/build-verified.sh",
-    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
+    "install:ci": "npm ci",
+    "prepare:source": "bash scripts/prepare-source.sh",
+    "dev": "npm run prepare:source && vite --host 0.0.0.0 --port 5173",
+    "build": "npm run prepare:source && vite build",
+    "preview": "vite preview",
+    "deploy": "npm run build && wrangler deploy",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "validate:artifact": "bash scripts/validate-artifact.sh",
-    "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply champions-lab-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply champions-lab-db --remote",
+    "cf:login": "wrangler login",
+    "cf:whoami": "wrangler whoami"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
@@ -40,5 +45,5 @@
     "wrangler": "4.92.0"
   },
   "type": "module",
-  "displayName": "Pok\u00e9mon Champions Lab"
+  "displayName": "Pokémon Champions Lab"
 }
