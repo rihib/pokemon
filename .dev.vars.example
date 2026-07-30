@@ -1,0 +1,7 @@
+# Google Cloud Consoleで作成したWeb OAuthクライアント
+GOOGLE_CLIENT_ID="replace-with-google-client-id"
+GOOGLE_CLIENT_SECRET="replace-with-google-client-secret"
+
+# 32バイト以上のランダム値を推奨
+# 例: openssl rand -base64 48
+SESSION_SECRET="replace-with-long-random-session-secret"
