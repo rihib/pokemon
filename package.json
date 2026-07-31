@@ -6,7 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "install:ci": "npm ci",
+    "install:ci": "npm install",
     "prepare:source": "bash scripts/prepare-source.sh",
     "dev": "npm run prepare:source && vite --host 0.0.0.0 --port 5173",
     "build": "npm run prepare:source && vite build",
@@ -21,6 +21,7 @@
     "cf:whoami": "wrangler whoami"
   },
   "dependencies": {
+    "@smogon/calc": "0.11.0",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "react": "19.2.6",
